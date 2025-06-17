@@ -116,12 +116,15 @@ class TexturePipeline(nn.Module):
 
         model_type = "controlnet" if "controlnet" in self.config.diffusion_type else "SD"
 
-        wandb.login()
-        wandb.init(
-            project="SceneTex",
-            name=self.log_name+"_"+self.log_stamp+"_"+model_type,
-            dir=self.log_dir
-        )
+        if(self.config.use_wandb):
+            wandb.login()
+            wandb.init(
+                project="SceneTex",
+                name=self.log_name+"_"+self.log_stamp+"_"+model_type,
+                dir=self.log_dir
+            )
+        else:
+            print("Not using WandB (set use_wandb to True in template.yaml to enable it)")
 
         with open(os.path.join(self.log_dir, "config.yaml"), "w") as f:
             OmegaConf.save(config=self.config, f=f)
@@ -410,10 +413,11 @@ class TexturePipeline(nn.Module):
             else:
                 raise ValueError("invalid loss type")
             
-            wandb.log({
-                "train/vsd_loss": vsd_loss.item(),
-                "train/vsd_lora_loss": vsd_phi_loss.item()
-            })
+            if(self.config.use_wandb):
+                wandb.log({
+                    "train/vsd_loss": vsd_loss.item(),
+                    "train/vsd_lora_loss": vsd_phi_loss.item()
+                })
             
             self.avg_loss_vsd.append(vsd_loss.item())
             self.avg_loss_phi.append(vsd_phi_loss.item())
@@ -478,19 +482,22 @@ class TexturePipeline(nn.Module):
                         clip_score = self._benchmark_step(latents_image, self.config.prompt)
                         clip_scores.append(clip_score)
 
-                        wandb_renderings.append(wandb.Image(latents_image))
+                        if(self.config.use_wandb):
+                            wandb_renderings.append(wandb.Image(latents_image))
 
-                        # depth
-                        depth_image = Image.fromarray(rel_depth[0].cpu().numpy().astype(np.uint8)).convert("L").resize((self.config.decode_size, self.config.decode_size))
-                        wandb_depths.append(wandb.Image(depth_image))
+                            # depth
+                            depth_image = Image.fromarray(rel_depth[0].cpu().numpy().astype(np.uint8)).convert("L").resize((self.config.decode_size, self.config.decode_size))
+                            wandb_depths.append(wandb.Image(depth_image))
 
-                    wandb_images += wandb_renderings
-                    wandb_images_depths += wandb_depths
+                    if(self.config.use_wandb):
+                        wandb_images += wandb_renderings
+                        wandb_images_depths += wandb_depths
 
-                wandb.log({
-                    "images": wandb_images,
-                    "depths": wandb_images_depths,
-                    "train/avg_loss": np.mean(self.avg_loss_vsd),
-                    "train/avg_loss_lora": np.mean(self.avg_loss_phi),
-                    "train/clip_score": np.mean(clip_scores)
-                })
+                if(self.config.use_wandb):
+                    wandb.log({
+                        "images": wandb_images,
+                        "depths": wandb_images_depths,
+                        "train/avg_loss": np.mean(self.avg_loss_vsd),
+                        "train/avg_loss_lora": np.mean(self.avg_loss_phi),
+                        "train/clip_score": np.mean(clip_scores)
+                    })
