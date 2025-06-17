@@ -123,8 +123,6 @@ class TexturePipeline(nn.Module):
             dir=self.log_dir
         )
 
-        wandb.watch(self, log="all")
-
         with open(os.path.join(self.log_dir, "config.yaml"), "w") as f:
             OmegaConf.save(config=self.config, f=f)
 
