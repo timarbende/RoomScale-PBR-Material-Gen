@@ -49,8 +49,8 @@ render_size: 768 # DO NOT CHANGE unless you know what you're doing!!!
 decode_size: 768 # DO NOT CHANGE unless you know what you're doing!!!
 latent_texture_size: 256 # optimization target size
 latent_background_size: 256 # optimization target size
-decode_texture_size: 128
-texture_size: 4096 # determined by VAE - should be decode_texture_size x8
+decode_texture_size: 16
+texture_size: 512 # determined by VAE - should be decode_texture_size x8
 faces_per_pixel: 1
 subdivide_factor: 0
 num_cameras: 1
@@ -83,7 +83,7 @@ use_random_cameras: True # False -> sample cameras in order, True -> sample came
 use_latent_embeddings: False
 
 # studio
-texture_type: hashgrid # latent / rgb / hashgrid / hashgrid_mlp
+texture_type: hashgrid # latent / rgb / hashgrid / hashgrid_mlp DEFAULT> hashgrid
 render_func_type: mlp # mlp / none
 
 add_view_directions: False
@@ -111,7 +111,7 @@ mlp_config:
   out_channels: 3
 
 # instance styles
-enable_anchor_embedding: True
+enable_anchor_embedding: True # Default: True
 num_anchors: 4096
 detach_anchors: False
 
