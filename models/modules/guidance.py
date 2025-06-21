@@ -320,6 +320,8 @@ class Guidance(nn.Module):
                     latent_model_input = torch.cat([latent_model_input, control], dim=1)
 
             # if self.config.verbose_mode: start = time.time()
+            #when run from calculate vsd loss, this jumps up to 100% use the gpu and goes straight back down
+            #when run from calculate vsd phi loss, this jumps to use 21000MB total in gpu and stays there
             noise_pred = unet(
                 latent_model_input.to(self.weights_dtype), 
                 t, 
@@ -354,6 +356,9 @@ class Guidance(nn.Module):
                     latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
 
             # if self.config.verbose_mode: start = time.time()
+
+            # adds 2000MB used memory (14000MB here total)
+
             noise_pred = unet(
                 latent_model_input.to(self.weights_dtype), 
                 t, 
@@ -393,6 +398,7 @@ class Guidance(nn.Module):
         return loss
     
     def compute_vsd_loss(self, latents, noisy_latents, noise, t, cross_attention_kwargs, control=None):    
+        # 8700MB total
 
         latents = latents.to("cpu")
         noisy_latents = noisy_latents.to("cpu")
@@ -403,7 +409,7 @@ class Guidance(nn.Module):
             # predict the noise residual with unet
             # set cross_attention_kwargs={"scale": 0} to use the pre-trained model
             if self.config.verbose_mode: start = time.time()
-            noise_pred = self.predict_noise(
+            noise_pred = self.predict_noise(       # 2000MB memory
                 self.unet, 
                 noisy_latents, 
                 t, 
@@ -414,7 +420,7 @@ class Guidance(nn.Module):
             if self.config.verbose_mode: print("=> VSD pretrained forward: {}s".format(time.time() - start))
 
             if self.config.verbose_mode: start = time.time()
-            noise_pred_phi = self.predict_noise(
+            noise_pred_phi = self.predict_noise(    # no extra memory
                 self.unet_phi, 
                 noisy_latents, 
                 t, 
@@ -439,13 +445,14 @@ class Guidance(nn.Module):
         return loss, loss.mean()
     
     def compute_vsd_phi_loss(self, noisy_latents, clean_latents, noise, t, cross_attention_kwargs, control=None):
+        # 6800MB at start
         if self.config.verbose_mode: start = time.time()
 
         noisy_latents = noisy_latents.to("cpu")
         clean_latents = clean_latents.to("cpu")
         noise = noise.to("cpu")
 
-        noise_pred_phi = self.predict_noise(
+        noise_pred_phi = self.predict_noise(    # this probably is the problem: adds 15000MB memory
             self.unet_phi, 
             noisy_latents, 
             t, 
@@ -463,4 +470,5 @@ class Guidance(nn.Module):
 
         loss = self.config.grad_scale * F.mse_loss(noise_pred_phi, target, reduction="none")
 
+        # 21130MB at end
         return loss, loss.mean()

@@ -334,6 +334,7 @@ class TexturePipeline(nn.Module):
             return 0
 
     def fit(self):
+        # 1000MB total
         pbar = tqdm(self.guidance.chosen_ts)
 
         self.guidance.init_text_embeddings(self.config.batch_size)  # adds ~ 1300MB used memory
@@ -377,7 +378,7 @@ class TexturePipeline(nn.Module):
 
                 # print("Fit before backward", torch.cuda.memory_summary())
 
-                vsd_loss.backward() # adds 1500MB used memory
+                vsd_loss.backward() # adds 1500MB used memory (total 12800)
 
                 # print("Fit before step", torch.cuda.memory_summary())
                 
@@ -386,7 +387,7 @@ class TexturePipeline(nn.Module):
                 # print("Fit after step", torch.cuda.memory_summary())
 
                 # phi
-                torch.cuda.empty_cache()    # frees 2700MB memory
+                torch.cuda.empty_cache()    # frees 2700-6000MB memory
 
                 self.phi_optimizer.zero_grad()
 
@@ -403,7 +404,7 @@ class TexturePipeline(nn.Module):
                     control=rel_depth_normalized if "d2i" in self.config.diffusion_type else None
                 )
 
-                vsd_phi_loss.backward() # frees 4000MB memory
+                vsd_phi_loss.backward() # dies with out of memory exception
                 self.phi_optimizer.step()
 
             elif self.config.loss_type == "l2": # only for debugging
