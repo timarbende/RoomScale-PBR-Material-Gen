@@ -291,6 +291,17 @@ class Guidance(nn.Module):
         return t, noise, noisy_latents, clean_latents
     
     def predict_noise(self, unet, noisy_latents, t, cross_attention_kwargs, guidance_scale, control=None):
+
+        def unet_forward(latent_model_input, t, encoder_hidden_states, cross_attention_kwargs, down_block_res_samples, mid_block_res_sample):
+                return unet(
+                    latent_model_input, 
+                    t, 
+                    encoder_hidden_states=encoder_hidden_states, 
+                    cross_attention_kwargs=cross_attention_kwargs,
+                    down_block_additional_residuals=down_block_res_samples,
+                    mid_block_additional_residual=mid_block_res_sample
+                ).sample
+
         down_block_res_samples, mid_block_res_sample = None, None
 
         if guidance_scale == 1:
@@ -322,14 +333,18 @@ class Guidance(nn.Module):
             # if self.config.verbose_mode: start = time.time()
             #when run from calculate vsd loss, this jumps up to 100% use the gpu and goes straight back down
             #when run from calculate vsd phi loss, this jumps to use 21000MB total in gpu and stays there
-            noise_pred = unet(
-                latent_model_input.to(self.weights_dtype), 
-                t, 
-                encoder_hidden_states=text_embeddings.to(self.weights_dtype), 
-                cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=down_block_res_samples,
-                mid_block_additional_residual=mid_block_res_sample
-            ).sample.to(torch.float32)
+
+            noise_pred = torch.utils.checkpoint.checkpoint(
+                unet_forward,
+                latent_model_input.to(self.weights_dtype),
+                t,
+                text_embeddings.to(self.weights_dtype),
+                cross_attention_kwargs,
+                down_block_res_samples,
+                mid_block_res_sample,
+                use_reentrant=False
+            ).to(torch.float32)
+
             # if self.config.verbose_mode: print("=> UNet forward: {}s".format(time.time() - start))
         else:
             latent_model_input = torch.cat([noisy_latents] * 2)
@@ -359,14 +374,17 @@ class Guidance(nn.Module):
 
             # adds 2000MB used memory (14000MB here total)
 
-            noise_pred = unet(
-                latent_model_input.to(self.weights_dtype), 
-                t, 
-                encoder_hidden_states=self.text_embeddings.to(self.weights_dtype), 
-                cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=down_block_res_samples,
-                mid_block_additional_residual=mid_block_res_sample
-            ).sample.to(torch.float32)
+            noise_pred = torch.utils.checkpoint.checkpoint(
+                unet_forward,
+                latent_model_input.to(self.weights_dtype),
+                t,
+                self.text_embeddings.to(self.weights_dtype),
+                cross_attention_kwargs,
+                down_block_res_samples,
+                mid_block_res_sample,
+                use_reentrant=False
+            ).to(torch.float32)
+
             # if self.config.verbose_mode: print("=> UNet forward: {}s".format(time.time() - start))
 
             # perform guidance
