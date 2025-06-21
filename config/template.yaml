@@ -49,8 +49,8 @@ render_size: 768 # DO NOT CHANGE unless you know what you're doing!!!
 decode_size: 768 # DO NOT CHANGE unless you know what you're doing!!!
 latent_texture_size: 256 # optimization target size
 latent_background_size: 256 # optimization target size
-decode_texture_size: 16
-texture_size: 512 # determined by VAE - should be decode_texture_size x8
+decode_texture_size: 128
+texture_size: 4096 # determined by VAE - should be decode_texture_size x8
 faces_per_pixel: 1
 subdivide_factor: 0
 num_cameras: 1
