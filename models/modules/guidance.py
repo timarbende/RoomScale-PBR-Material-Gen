@@ -28,9 +28,7 @@ class Guidance(nn.Module):
         super().__init__()
         
         self.config = config
-        #self.device = device
-
-        self.device = "cpu"
+        self.device = device
 
         self.prompt = config.prompt + ", " + config.a_prompt if config.a_prompt else config.prompt
         self.n_prompt = config.n_prompt
@@ -70,12 +68,6 @@ class Guidance(nn.Module):
         if self.config.enable_memory_efficient_attention:
             print("=> Enable memory efficient attention.")
             diffusion_model.enable_xformers_memory_efficient_attention()
-
-#        diffusion_model.enable_attention_slicing()
-#        print("enable attention slicing")
-
-        diffusion_model.enable_model_cpu_offload()        
-        print("enable cpu offload")
 
         # pretrained diffusion model
         self.tokenizer = diffusion_model.tokenizer
@@ -259,8 +251,6 @@ class Guidance(nn.Module):
         return outputs
     
     def encode_latent_texture(self, inputs, deterministic=False):
-        inputs = inputs.to("cpu")
-
         inputs = inputs.clamp(-1, 1)
         
         h = self.vae.encoder(inputs)
@@ -284,7 +274,6 @@ class Guidance(nn.Module):
         return noise, noisy_latents, clean_latents
 
     def prepare_latents(self, latents, t, batch_size):
-        latents = latents.to("cpu")
         t = torch.tensor([t]).to(self.device)
         noise, noisy_latents, clean_latents = self.prepare_one_latent(latents, t)
 
@@ -326,8 +315,6 @@ class Guidance(nn.Module):
                         down_block_res_samples = [e.to(self.weights_dtype) for e in down_block_res_samples]
                         mid_block_res_sample = mid_block_res_sample.to(self.weights_dtype)
                 else:
-                    latent_model_input = latent_model_input.to("cpu")
-                    control = control.to("cpu")
                     latent_model_input = torch.cat([latent_model_input, control], dim=1)
 
             # if self.config.verbose_mode: start = time.time()
@@ -366,8 +353,6 @@ class Guidance(nn.Module):
                         down_block_res_samples = [e.to(self.weights_dtype) for e in down_block_res_samples]
                         mid_block_res_sample = mid_block_res_sample.to(self.weights_dtype)
                 else:
-                    latent_model_input = latent_model_input.to("cpu")
-                    control = control.to("cpu")
                     latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
 
             # if self.config.verbose_mode: start = time.time()
@@ -418,11 +403,6 @@ class Guidance(nn.Module):
     def compute_vsd_loss(self, latents, noisy_latents, noise, t, cross_attention_kwargs, control=None):    
         # 8700MB total
 
-        latents = latents.to("cpu")
-        noisy_latents = noisy_latents.to("cpu")
-        if control is not None :
-            control = control.to("cpu")
-
         with torch.no_grad():
             # predict the noise residual with unet
             # set cross_attention_kwargs={"scale": 0} to use the pre-trained model
@@ -455,8 +435,6 @@ class Guidance(nn.Module):
         
         # d(loss)/d(latents) = latents - target = latents - (latents - grad) = grad
 
-        grad = grad.to("cpu")
-
         target = (latents - grad).detach()
         loss = 0.5 * F.mse_loss(latents, target, reduction="none")
 
@@ -465,10 +443,6 @@ class Guidance(nn.Module):
     def compute_vsd_phi_loss(self, noisy_latents, clean_latents, noise, t, cross_attention_kwargs, control=None):
         # 6800MB at start
         if self.config.verbose_mode: start = time.time()
-
-        noisy_latents = noisy_latents.to("cpu")
-        clean_latents = clean_latents.to("cpu")
-        noise = noise.to("cpu")
 
         noise_pred_phi = self.predict_noise(    # this probably is the problem: adds 15000MB memory
             self.unet_phi, 
@@ -482,9 +456,6 @@ class Guidance(nn.Module):
         if self.config.verbose_mode: print("=> phi lora forward: {}s".format(time.time() - start))
 
         target = noise
-
-        target = target.to("cpu")
-        noise_pred_phi = noise_pred_phi.to("cpu")
 
         loss = self.config.grad_scale * F.mse_loss(noise_pred_phi, target, reduction="none")
 
