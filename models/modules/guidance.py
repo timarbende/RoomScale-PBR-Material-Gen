@@ -350,7 +350,7 @@ class Guidance(nn.Module):
             noise_pred = unet(
                 latent_model_input.to(self.weights_dtype), 
                 t, 
-                encoder_hidden_states=text_embeddings.to(self.weights_dtype), 
+                encoder_hidden_states=self.text_embeddings.to(self.weights_dtype), 
                 cross_attention_kwargs=cross_attention_kwargs,
                 down_block_additional_residuals=down_block_res_samples,
                 mid_block_additional_residual=mid_block_res_sample
