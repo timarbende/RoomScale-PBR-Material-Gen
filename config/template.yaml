@@ -1,5 +1,5 @@
 # VSD guidance
-guidance_scale: 7.5
+guidance_scale: 200.0
 guidance_scale_phi: 1.0
 phi_scale: 1.0
 grad_scale: 1.0
