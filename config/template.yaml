@@ -144,3 +144,6 @@ blender_cameras: ${scene_dir}/${scene_id}/cameras/blender.json
 
 # wandb
 use_wandb: True
+
+#rgb2x
+cache_dir: models/rgb2x_cache

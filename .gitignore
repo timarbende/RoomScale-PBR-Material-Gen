@@ -19,3 +19,7 @@ _cache*
 *.pyc
 *.pth
 *.png
+
+models/rgb2x_cache/
+
+lib/__pycache__/
