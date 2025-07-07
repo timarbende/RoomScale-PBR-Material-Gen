@@ -17,3 +17,5 @@ data/
 
 _cache*
 *.pyc
+*.pth
+*.png

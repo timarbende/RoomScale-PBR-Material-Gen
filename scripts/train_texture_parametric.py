@@ -88,7 +88,7 @@ if __name__ == "__main__":
     print("=> loading config file...")
     config = init_config(args)
 
-    print("=> initializing pipeline...")
+    print("=> initializing scenetex pipeline...")
     pipeline = init_pipeline(config=config, stamp=args.stamp, inference_mode=inference_mode)
 
     if not inference_mode:
