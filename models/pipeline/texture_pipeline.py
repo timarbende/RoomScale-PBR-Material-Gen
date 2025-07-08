@@ -334,20 +334,17 @@ class TexturePipeline(nn.Module):
             return 0
 
     def fit(self):
-        # 1000MB total
         pbar = tqdm(self.guidance.chosen_ts)
 
-        self.guidance.init_text_embeddings(self.config.batch_size)  # adds ~ 1300MB used memory
+        self.guidance.init_text_embeddings(self.config.batch_size)
 
         for step, chosen_t in enumerate(pbar):
 
-            # print("Texture pipeline fit", torch.cuda.memory_summary())
+            Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
+            cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
-            Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)    # add no used memory
-            cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)    # adds no used memory
-
-            latents, _, _, rel_depth_normalized = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))     # adds 2300MB used memory
-            t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)   # adds no used memory
+            latents, _, _, rel_depth_normalized = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
+            t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
 
             # compute loss
             if self.config.loss_type == "sds":
@@ -370,24 +367,18 @@ class TexturePipeline(nn.Module):
                 # VSD
                 self.texture_optimizer.zero_grad()
 
-                vsd_loss_pixel, vsd_loss = self.guidance.compute_vsd_loss(  # adds ~15000MB used memory but frees ~13000MB on end
+                vsd_loss_pixel, vsd_loss = self.guidance.compute_vsd_loss(
                     latents, noisy_latents, noise, t.to(latents.dtype), 
                     cross_attention_kwargs={'scale': self.config.phi_scale},
                     control=rel_depth_normalized if "d2i" in self.config.diffusion_type else None
                 )
 
-                # print("Fit before backward", torch.cuda.memory_summary())
-
-                vsd_loss.backward() # adds 1500MB used memory (total 12800)
-
-                # print("Fit before step", torch.cuda.memory_summary())
+                vsd_loss.backward()
                 
-                self.texture_optimizer.step()   # adds 8MB used memory
-
-                # print("Fit after step", torch.cuda.memory_summary())
+                self.texture_optimizer.step()
 
                 # phi
-                torch.cuda.empty_cache()    # frees 2700-6000MB memory
+                torch.cuda.empty_cache()
 
                 self.phi_optimizer.zero_grad()
 
@@ -398,13 +389,13 @@ class TexturePipeline(nn.Module):
 
                 t_phi, noise_phi, noisy_latents_phi, clean_latents_phi = self.guidance.prepare_latents(latents, t_phi, self.config.batch_size)
                 
-                vsd_phi_loss_pixel, vsd_phi_loss = self.guidance.compute_vsd_phi_loss(  # adds 15000MB memory and doesn't free anything
+                vsd_phi_loss_pixel, vsd_phi_loss = self.guidance.compute_vsd_phi_loss(
                     noisy_latents_phi.detach(), clean_latents_phi, noise_phi, t_phi.to(latents.dtype), 
                     cross_attention_kwargs={'scale': self.config.phi_scale},
                     control=rel_depth_normalized if "d2i" in self.config.diffusion_type else None
                 )
 
-                vsd_phi_loss.backward() # dies with out of memory exception
+                vsd_phi_loss.backward()
                 self.phi_optimizer.step()
 
             elif self.config.loss_type == "l2": # only for debugging

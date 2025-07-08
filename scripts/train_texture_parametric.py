@@ -146,8 +146,6 @@ def parameterize_texture(rgb2x_pipeline):
 
         generated_image = torchvision.transforms.Resize((old_height, old_width))(generated_image)
 
-        print("generate image type:", type(generated_image))
-
         return_list.append((generated_image, aov_name))
 
     return return_list
