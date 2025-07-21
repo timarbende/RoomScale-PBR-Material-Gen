@@ -42,6 +42,7 @@ class Guidance(nn.Module):
         self._init_t_schedule()
 
     def _init_backbone(self):
+        # TODO: itt ehelyett kell inicializálni az rgb2x unetjét
         if self.config.diffusion_type == "t2i":
             from diffusers import StableDiffusionPipeline as DiffusionPipeline
             checkpoint_name = "stabilityai/stable-diffusion-2-1-base"
@@ -311,6 +312,8 @@ class Guidance(nn.Module):
             #when run from calculate vsd loss, this jumps up to 100% use the gpu and goes straight back down
             #when run from calculate vsd phi loss, this jumps to use 21000MB total in gpu and stays there
 
+            # TODO:itt ezt tippre át kell írni
+            # ez itt az rgbx unetje lesz
             noise_pred = unet(
                 latent_model_input.to(self.weights_dtype), 
                 t, 

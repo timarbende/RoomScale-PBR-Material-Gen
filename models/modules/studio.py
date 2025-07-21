@@ -1,6 +1,8 @@
 import json
 import random
 
+import matplotlib.pyplot as plt
+import torchvision
 import torch
 import torch.nn as nn
 
@@ -316,19 +318,28 @@ class Studio(nn.Module):
     def render_features(self, renderer, mesh, texture, is_direct=False, is_background=False, anchors=None):
         # if enable_anchor_embedding is True
         # latents will be the rendered instance map
+
+        # latents a kirenderelt optimalizálandó textúra
         latents, fragments = renderer(mesh) # image: (N, H, W, C)
 
         if is_direct:
             features = latents
         else:
             uv_coords = self.get_uv_coordinates(mesh, fragments)
+
+            # ez kiadja az árnyékolt képet
             features = self.query_texture(uv_coords, texture)
 
             if self.config.enable_anchor_embedding:
                 features = self.query_anchor_features(anchors, texture, features, latents[..., 0], is_background)
 
+        # features csak sima rgb valuek
         features = self.render_func(features)
 
+        # ez itt a conditioning image, ezt nem optimalizál
+        # nekünk a conditioning a renderelt kép: tartalmazza pl. az árnyékokat
+
+        # gyors megoldás: második mesh, ehhez hozzákötve a rendes textúra
         absolute_depth, relative_depth = self.get_relative_depth_map(fragments.zbuf)
 
         return features, fragments, absolute_depth, relative_depth # (N, H, W, C)

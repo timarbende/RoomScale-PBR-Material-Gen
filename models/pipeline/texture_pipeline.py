@@ -33,7 +33,32 @@ from pytorch3d.io import (
 from pytorch3d.renderer import TexturesUV
 from pytorch3d.ops import interpolate_face_attributes
 
-from typing import Optional
+from models.pipeline.pipeline_rgb2x import StableDiffusionAOVMatEstPipeline
+from diffusers import DDIMScheduler
+from models.utils.load_image import load_ldr_image
+
+from pytorch3d.renderer import (
+    FoVPerspectiveCameras,
+    PointLights, 
+    DirectionalLights, 
+    Materials, 
+    RasterizationSettings, 
+    MeshRenderer, 
+    MeshRasterizer,  
+    SoftPhongShader,
+    TexturesUV,
+    TexturesVertex
+)
+
+from pytorch3d.io import (
+    load_obj,
+    load_objs_as_meshes
+)
+
+from pytorch3d.utils import ico_sphere
+from pytorch3d.ops import sample_points_from_meshes
+
+from mpl_toolkits.mplot3d import Axes3D
 
 # customized
 import sys
@@ -83,9 +108,13 @@ class TexturePipeline(nn.Module):
         # instances
         self._init_anchors()
 
+        self.generator = torch.Generator(device="cpu").manual_seed(0)
+
         if not inference_mode:
             # diffusion
             self._init_guidance()
+
+            self._init_rgb2x()
 
             # optimization
             self._configure_optimizers()
@@ -101,6 +130,8 @@ class TexturePipeline(nn.Module):
 
     def _init_mesh(self):
         self.texture_mesh = TextureMesh(self.config, self.device)
+        # self.scenetex_mesh = TextureMesh(self.config, self.device)
+        # TODO: load texture árnyékokkal
 
     def _init_guidance(self):
         self.guidance = Guidance(self.config, self.device)
@@ -131,6 +162,21 @@ class TexturePipeline(nn.Module):
 
         self.avg_loss_vsd = []
         self.avg_loss_phi = []
+
+    def _init_rgb2x(self):
+        pipeline = StableDiffusionAOVMatEstPipeline.from_pretrained(
+            "zheng95z/rgb-to-x",
+            torch_dtype=torch.float32,
+            cache_dir=self.config.cache_dir,
+        ).to("cpu")
+
+        pipeline.scheduler = DDIMScheduler.from_config(
+            pipeline.scheduler.config, rescale_betas_zero_snr=True, timestep_spacing="trailing"
+        )
+
+        pipeline.set_progress_bar_config(disable=True)
+
+        self.rgb2x = pipeline
 
     def _get_texture_parameters(self):
         if "hashgrid" not in self.config.texture_type:
@@ -332,6 +378,104 @@ class TexturePipeline(nn.Module):
             return F.cosine_similarity(image_features, text_features).item()
         else:
             return 0
+        
+    def _parameterize_shit(self, photo):
+        old_height = photo.shape[1]
+        old_width = photo.shape[2]
+        new_height = old_height
+        new_width = old_width
+        radio = old_height / old_width
+        max_side = 1000
+        if old_height > old_width:
+            new_height = max_side
+            new_width = int(new_height / radio)
+        else:
+            new_width = max_side
+            new_height = int(new_width * radio)
+
+        if new_width % 8 != 0 or new_height % 8 != 0:
+            new_width = new_width // 8 * 8
+            new_height = new_height // 8 * 8
+
+        photo = torchvision.transforms.Resize((new_height, new_width))(photo)
+
+        required_aovs = ["albedo"]
+        prompts = {"albedo": "Albedo (diffuse basecolor)"}
+
+        return_list = []
+        for aov_name in required_aovs:
+            prompt = prompts[aov_name]
+            generated_image = self.rgb2x(
+                prompt=prompt,
+                photo=photo,
+                num_inference_steps=50,
+                height=new_height,
+                width=new_width,
+                generator=self.generator,
+                required_aovs=[aov_name],
+            ).images[0][0]
+
+            # images is Union[List[PIL.Image.Image], np.ndarray] where List[PIL.Image.Image] is the list of images and np.ndarray is list of whether corresponding image contains nsfw
+            # we take the first image in the list in the union
+
+            generated_image = torchvision.transforms.Resize((old_height, old_width))(generated_image)
+
+            return_list.append((generated_image, aov_name))
+
+        return return_list
+
+    def dummy_render(self):
+        Rs, Ts, fovs, ids = self.studio.sample_cameras(0, self.config.batch_size, self.config.use_random_cameras)
+        cameras = FoVPerspectiveCameras(R=Rs, T=Ts, device=self.device, fov=fovs)
+        raster_settings = RasterizationSettings(
+            image_size=512, 
+            blur_radius=0.0, 
+            faces_per_pixel=1, 
+        )
+
+        lights = PointLights(device=self.device, location=[[0.0, 0.0, -3.0]])
+
+        renderer = MeshRenderer(
+            rasterizer=MeshRasterizer(
+                cameras=cameras, 
+                raster_settings=raster_settings
+            ),
+            shader=SoftPhongShader(
+                device=self.device, 
+                cameras=cameras,
+                lights=lights
+            )
+        )
+
+        output_dir = Path("outputs") / "meshes" / "scene.obj"
+        mesh = load_objs_as_meshes([str(output_dir)], device = self.device)
+
+        verts = mesh.verts_packed()
+        verts_rgb = torch.ones_like(verts)[None]  # (1, V, 3), all ones = white
+
+        mesh.textures = TexturesVertex(verts_features=verts_rgb)
+
+        images = renderer(mesh)
+        plt.figure(figsize=(10, 10))
+        plt.imshow(images[0, ..., :3].cpu().numpy())
+        plt.axis("off")
+        plt.savefig("render_dummy.png", bbox_inches='tight')
+
+    def plot_pointcloud(self):
+    # Sample points uniformly from the surface of the mesh.
+        output_dir = Path("outputs") / "meshes" / "scene.obj"
+        mesh = load_objs_as_meshes([str(output_dir)], device = self.device)
+        points = sample_points_from_meshes(mesh, 5000)
+        x, y, z = points.clone().detach().cpu().squeeze().unbind(1)    
+        fig = plt.figure(figsize=(5, 5))
+        ax = fig.add_subplot(111, projection='3d')
+        ax.scatter3D(x, z, -y)
+        ax.set_xlabel('x')
+        ax.set_ylabel('z')
+        ax.set_zlabel('y')
+        ax.view_init(190, 30)
+        
+        plt.savefig("render_dummy_points.png", bbox_inches='tight')
 
     def fit(self):
         pbar = tqdm(self.guidance.chosen_ts)
@@ -343,7 +487,11 @@ class TexturePipeline(nn.Module):
             Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
             cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
+            # itt rel_depth_normalized helyett kell a conditioning image: kirenderelt árnyékolt textúra
             latents, _, _, rel_depth_normalized = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
+            #latents = latents.cpu()
+            #latents = self._parameterize_shit(latents.squeeze())
+            #latents = latents.to("cuda")
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
 
             # compute loss
@@ -353,6 +501,7 @@ class TexturePipeline(nn.Module):
 
                 sds_loss = self.guidance.compute_sds_loss(
                     latents, noisy_latents, noise, t.to(latents.dtype), 
+                    # itt a control a conditioning image
                     control=rel_depth_normalized if "d2i" in self.config.diffusion_type else None
                 )
 

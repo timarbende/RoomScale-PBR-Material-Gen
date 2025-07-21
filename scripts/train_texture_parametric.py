@@ -98,6 +98,7 @@ def parameterize_texture(rgb2x_pipeline):
     generator = torch.Generator(device="cuda").manual_seed(0)
     photo_path = "./texture_29900.png"
     photo = load_ldr_image(photo_path, from_srgb=True).to("cuda")
+    # load_ldr_image gives back a tensor with shape (C, H, W)
 
     # Check if the width and height are multiples of 8. If not, crop it using torchvision.transforms.CenterCrop
     old_height = photo.shape[1]

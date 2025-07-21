@@ -94,6 +94,8 @@ if __name__ == "__main__":
     if not inference_mode:
         print("=> start training...")
         with torch.autograd.set_detect_anomaly(True):
+            pipeline.dummy_render()
+            pipeline.plot_pointcloud()
             pipeline.fit()
     else:
         print("inference mode")
