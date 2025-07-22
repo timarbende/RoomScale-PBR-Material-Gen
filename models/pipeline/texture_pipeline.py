@@ -136,7 +136,7 @@ class TexturePipeline(nn.Module):
         conditioning_texture_path = os.path.join("outputs", "a_bohemian_style_living_room", "sds", "2025-06-26_16-34-01", "texture_20000.png")
         img = Image.open(conditioning_texture_path)
         convert_tensor = torchvision.transforms.ToTensor()
-        conditioning_texture = convert_tensor(img).permute(1, 2, 0)
+        conditioning_texture = convert_tensor(img).permute(1, 2, 0).cuda()
         
         self.conditioning_mesh = mesh.clone()
         self.conditioning_mesh.textures = TexturesUV(
@@ -460,15 +460,7 @@ class TexturePipeline(nn.Module):
             )
         )
 
-        output_dir = Path("outputs") / "meshes" / "scene.obj"
-        mesh = load_objs_as_meshes([str(output_dir)], device = self.device)
-
-        verts = mesh.verts_packed()
-        verts_rgb = torch.ones_like(verts)[None]  # (1, V, 3), all ones = white
-
-        mesh.textures = TexturesVertex(verts_features=verts_rgb)
-
-        images = renderer(mesh)
+        images = renderer(self.conditioning_mesh)
         plt.figure(figsize=(10, 10))
         plt.imshow(images[0, ..., :3].cpu().numpy())
         plt.axis("off")
