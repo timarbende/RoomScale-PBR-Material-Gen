@@ -39,6 +39,15 @@ class TextureMesh(nn.Module):
 
         self._init_mesh()
 
+    # mesh = Meshes object, output of load_objs_as_meshes function
+    # faces = faces output of the load_obj function (tuple)
+    # faces NamedTuple with fields verts_idx, normals_idx, textures_idx, materials_idx
+    # aux = aux output of the load_obj function
+    # aux: NamedTuple with fields normals, verts_uvs, material_colors, texture_images
+
+    # parts used here:
+    # faces.textures_idx: LongTensor of texture indices, shape (F, 3)
+    # aux.verts_uvs: FloatTensor of shape (T, 2)
     def apply_texture_to_mesh(self, mesh, faces, aux, texture_tensor, sampling_mode="bilinear"):
         new_mesh = mesh.clone() # in-place operation - DANGER!!!
         new_mesh.textures = TexturesUV(

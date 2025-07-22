@@ -92,6 +92,7 @@ class TexturePipeline(nn.Module):
         if not inference_mode:
             self.log_name = "_".join(self.config.prompt.split(' '))
             self.log_stamp = self.stamp
+            # TODO: add config parameter for selected AoV
             self.log_dir = os.path.join(self.config.log_dir, self.log_name, self.config.loss_type, self.log_stamp)
 
             # override config
@@ -130,8 +131,20 @@ class TexturePipeline(nn.Module):
 
     def _init_mesh(self):
         self.texture_mesh = TextureMesh(self.config, self.device)
-        # self.scenetex_mesh = TextureMesh(self.config, self.device)
-        # TODO: load texture árnyékokkal
+
+        mesh = self.texture_mesh.mesh
+        conditioning_texture_path = os.path.join("outputs", "a_bohemian_style_living_room", "sds", "2025-06-26_16-34-01", "texture_20000.png")
+        img = Image.open(conditioning_texture_path)
+        convert_tensor = torchvision.transforms.ToTensor()
+        conditioning_texture = convert_tensor(img).permute(1, 2, 0)
+        
+        self.conditioning_mesh = mesh.clone()
+        self.conditioning_mesh.textures = TexturesUV(
+            maps=conditioning_texture[None, ...],  # B, H, W, C
+            faces_uvs= mesh.textures.faces_uvs_padded(),
+            verts_uvs= mesh.textures.verts_uvs_padded(),
+            sampling_mode="bilinear"
+        )
 
     def _init_guidance(self):
         self.guidance = Guidance(self.config, self.device)
