@@ -40,6 +40,7 @@ class Guidance(nn.Module):
             "irradiance": "Irradiance (diffuse lighting)",
         }
         self.prompt=prompts[self.aov]
+        self.n_prompt = config.n_prompt
         
         self.weights_dtype = torch.float16 if self.config.enable_half_precision else torch.float32
 
@@ -202,7 +203,7 @@ class Guidance(nn.Module):
 
         max_length = text_input.shape[-1]
         uncond_input = self.tokenizer(
-            [""], #TODO: see if we can use some prompts to boost unconditional input of classifier guidance
+            [self.n_prompt], 
             padding="max_length", 
             max_length=max_length, 
             return_tensors="pt"

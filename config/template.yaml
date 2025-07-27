@@ -133,7 +133,7 @@ log_dir: "" # TODO
 
 prompt: "" # TODO
 a_prompt: best quality, high quality, extremely detailed, good geometry, high-res photo
-n_prompt: deformed, extra digit, fewer digits, cropped, worst quality, low quality, smoke, shading, lighting, lumination, shadow, text in image, watermarks
+n_prompt: #TODO can we have n_prompt for albedo? #deformed, extra digit, fewer digits, cropped, worst quality, low quality, smoke, shading, lighting, lumination, shadow, text in image, watermarks
 
 scene_dir: data/scenes
 scene_id: "" # TODO <house_id>/<room_id>
