@@ -13,6 +13,7 @@ import torchvision
 
 from PIL import Image
 from diffusers import DDIMScheduler, ControlNetModel
+from models.pipeline.pipeline_rgb2x import StableDiffusionAOVMatEstPipeline
 
 # customized
 import sys
@@ -74,7 +75,13 @@ class Guidance(nn.Module):
         self.tokenizer = diffusion_model.tokenizer
         self.text_encoder = diffusion_model.text_encoder
         self.vae = diffusion_model.vae
-        self.unet = diffusion_model.unet.to(self.weights_dtype)
+        #self.unet = diffusion_model.unet.to(self.weights_dtype)
+        mat_est_pipe = StableDiffusionAOVMatEstPipeline.from_pretrained(
+            "zheng95z/rgb-to-x",
+            torch_dtype=torch.float16,
+            cache_dir=self.config.cache_dir,
+        ).to("cuda")
+        self.unet = mat_est_pipe.unet
 
         self.text_encoder.requires_grad_(False)
         self.vae.requires_grad_(False)
@@ -309,11 +316,7 @@ class Guidance(nn.Module):
                     latent_model_input = torch.cat([latent_model_input, control], dim=1)
 
             # if self.config.verbose_mode: start = time.time()
-            #when run from calculate vsd loss, this jumps up to 100% use the gpu and goes straight back down
-            #when run from calculate vsd phi loss, this jumps to use 21000MB total in gpu and stays there
 
-            # TODO:itt ezt tippre át kell írni
-            # ez itt az rgbx unetje lesz
             noise_pred = unet(
                 latent_model_input.to(self.weights_dtype), 
                 t, 
@@ -347,8 +350,6 @@ class Guidance(nn.Module):
                     latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
 
             # if self.config.verbose_mode: start = time.time()
-
-            # adds 2000MB used memory (14000MB here total)
 
             noise_pred = unet(
                 latent_model_input.to(self.weights_dtype), 
