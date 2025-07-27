@@ -133,6 +133,10 @@ class TexturePipeline(nn.Module):
         self.texture_mesh = TextureMesh(self.config, self.device)
 
         mesh = self.texture_mesh.mesh
+
+        # if we want to get it programmatically, this is the path:
+        # os.path.join(self.config.log_dir, "texture_{}.png".format(20000))
+
         conditioning_texture_path = os.path.join("outputs", "a_bohemian_style_living_room", "sds", "2025-06-26_16-34-01", "texture_20000.png")
         img = Image.open(conditioning_texture_path)
         convert_tensor = torchvision.transforms.ToTensor()
@@ -437,8 +441,8 @@ class TexturePipeline(nn.Module):
 
         return return_list
 
-    def dummy_render(self):
-        Rs, Ts, fovs, ids = self.studio.sample_cameras(0, self.config.batch_size, self.config.use_random_cameras)
+    def render_conditioning_image(self):
+        Rs, Ts, fovs, _ = self.studio.sample_cameras(0, self.config.batch_size, self.config.use_random_cameras)
         cameras = FoVPerspectiveCameras(R=Rs, T=Ts, device=self.device, fov=fovs)
         raster_settings = RasterizationSettings(
             image_size=512, 
@@ -461,26 +465,7 @@ class TexturePipeline(nn.Module):
         )
 
         images = renderer(self.conditioning_mesh)
-        plt.figure(figsize=(10, 10))
-        plt.imshow(images[0, ..., :3].cpu().numpy())
-        plt.axis("off")
-        plt.savefig("render_dummy.png", bbox_inches='tight')
-
-    def plot_pointcloud(self):
-    # Sample points uniformly from the surface of the mesh.
-        output_dir = Path("outputs") / "meshes" / "scene.obj"
-        mesh = load_objs_as_meshes([str(output_dir)], device = self.device)
-        points = sample_points_from_meshes(mesh, 5000)
-        x, y, z = points.clone().detach().cpu().squeeze().unbind(1)    
-        fig = plt.figure(figsize=(5, 5))
-        ax = fig.add_subplot(111, projection='3d')
-        ax.scatter3D(x, z, -y)
-        ax.set_xlabel('x')
-        ax.set_ylabel('z')
-        ax.set_zlabel('y')
-        ax.view_init(190, 30)
-        
-        plt.savefig("render_dummy_points.png", bbox_inches='tight')
+        return images
 
     def fit(self):
         pbar = tqdm(self.guidance.chosen_ts)
@@ -493,11 +478,9 @@ class TexturePipeline(nn.Module):
             cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
             # itt rel_depth_normalized helyett kell a conditioning image: kirenderelt árnyékolt textúra
-            latents, _, _, rel_depth_normalized = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
-            #latents = latents.cpu()
-            #latents = self._parameterize_shit(latents.squeeze())
-            #latents = latents.to("cuda")
+            latents, _, _, _ = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
+            conditioning_image = self.render_conditioning_image()
 
             # compute loss
             if self.config.loss_type == "sds":
@@ -507,7 +490,7 @@ class TexturePipeline(nn.Module):
                 sds_loss = self.guidance.compute_sds_loss(
                     latents, noisy_latents, noise, t.to(latents.dtype), 
                     # itt a control a conditioning image
-                    control=rel_depth_normalized if "d2i" in self.config.diffusion_type else None
+                    control=conditioning_image
                 )
 
                 sds_loss.backward()
