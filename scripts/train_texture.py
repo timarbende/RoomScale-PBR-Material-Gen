@@ -27,7 +27,8 @@ def init_args():
     parser.add_argument("--config", type=str, default="config/optimize_texture.yaml")
     parser.add_argument("--stamp", type=str, default=None)
     parser.add_argument("--checkpoint_dir", type=str, default="")
-    parser.add_argument("--checkpoint_step", type=int, default=0)
+    parser.add_argument("--conditioning_texture_step", type=int, default=0)
+    parser.add_argument("--aov", type=str, default="")
     parser.add_argument("--texture_size", type=int, default=4096)
 
     # only with template
@@ -44,6 +45,8 @@ def init_args():
 
 def init_config(args):
     config = OmegaConf.load(args.config)
+
+    config.aov=args.aov
 
     # template
     if len(args.log_dir) != 0 and len(args.prompt) != 0 and len(args.scene_id) != 0:

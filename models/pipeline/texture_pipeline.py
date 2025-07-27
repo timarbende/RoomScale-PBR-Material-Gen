@@ -477,7 +477,6 @@ class TexturePipeline(nn.Module):
             Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
             cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
-            # itt rel_depth_normalized helyett kell a conditioning image: kirenderelt árnyékolt textúra
             latents, _, _, _ = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
             conditioning_image = self.render_conditioning_image()

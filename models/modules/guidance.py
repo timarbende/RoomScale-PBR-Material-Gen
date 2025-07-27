@@ -31,8 +31,15 @@ class Guidance(nn.Module):
         self.config = config
         self.device = device
 
-        self.prompt = config.prompt + ", " + config.a_prompt if config.a_prompt else config.prompt
-        self.n_prompt = config.n_prompt
+        self.aov= config.aov
+        prompts = {
+            "albedo": "Albedo (diffuse basecolor)",
+            "normal": "Camera-space Normal",
+            "roughness": "Roughness",
+            "metallic": "Metallicness",
+            "irradiance": "Irradiance (diffuse lighting)",
+        }
+        self.prompt=prompts[self.aov]
         
         self.weights_dtype = torch.float16 if self.config.enable_half_precision else torch.float32
 
@@ -195,7 +202,7 @@ class Guidance(nn.Module):
 
         max_length = text_input.shape[-1]
         uncond_input = self.tokenizer(
-            [self.n_prompt], 
+            [""], #TODO: see if we can use some prompts to boost unconditional input of classifier guidance
             padding="max_length", 
             max_length=max_length, 
             return_tensors="pt"
@@ -204,6 +211,15 @@ class Guidance(nn.Module):
         with torch.no_grad():
             uncond_embeddings = self.text_encoder(uncond_input)[0].repeat(batch_size, 1, 1)
 
+        #TODO: rgb2x also does
+        #   prompt_embeds = self.text_encoder(
+        #        text_input_ids.to(device),
+        #        attention_mask=attention_mask,
+        #    )
+        #    prompt_embeds = prompt_embeds[0]
+        #
+        #   where text_input_ids = text_inputs.input_ids
+        #   we should see if we also need this
         self.text_embeddings = torch.cat([uncond_embeddings, text_embeddings])
 
     def prepare_depth_map(self, depth_map):
