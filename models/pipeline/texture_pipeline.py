@@ -395,51 +395,6 @@ class TexturePipeline(nn.Module):
             return F.cosine_similarity(image_features, text_features).item()
         else:
             return 0
-        
-    def _parameterize_shit(self, photo):
-        old_height = photo.shape[1]
-        old_width = photo.shape[2]
-        new_height = old_height
-        new_width = old_width
-        radio = old_height / old_width
-        max_side = 1000
-        if old_height > old_width:
-            new_height = max_side
-            new_width = int(new_height / radio)
-        else:
-            new_width = max_side
-            new_height = int(new_width * radio)
-
-        if new_width % 8 != 0 or new_height % 8 != 0:
-            new_width = new_width // 8 * 8
-            new_height = new_height // 8 * 8
-
-        photo = torchvision.transforms.Resize((new_height, new_width))(photo)
-
-        required_aovs = ["albedo"]
-        prompts = {"albedo": "Albedo (diffuse basecolor)"}
-
-        return_list = []
-        for aov_name in required_aovs:
-            prompt = prompts[aov_name]
-            generated_image = self.rgb2x(
-                prompt=prompt,
-                photo=photo,
-                num_inference_steps=50,
-                height=new_height,
-                width=new_width,
-                generator=self.generator,
-                required_aovs=[aov_name],
-            ).images[0][0]
-
-            # images is Union[List[PIL.Image.Image], np.ndarray] where List[PIL.Image.Image] is the list of images and np.ndarray is list of whether corresponding image contains nsfw
-            # we take the first image in the list in the union
-
-            generated_image = torchvision.transforms.Resize((old_height, old_width))(generated_image)
-
-            return_list.append((generated_image, aov_name))
-
-        return return_list
 
     def render_conditioning_image(self):
         Rs, Ts, fovs, _ = self.studio.sample_cameras(0, self.config.batch_size, self.config.use_random_cameras)
@@ -477,7 +432,7 @@ class TexturePipeline(nn.Module):
             Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
             cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
-            latents, _, _, _ = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
+            latents, _, _, rel_depth_normalized = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
             conditioning_image = self.render_conditioning_image()
 
@@ -488,8 +443,7 @@ class TexturePipeline(nn.Module):
 
                 sds_loss = self.guidance.compute_sds_loss(
                     latents, noisy_latents, noise, t.to(latents.dtype), 
-                    # itt a control a conditioning image
-                    control=conditioning_image
+                    control=rel_depth_normalized
                 )
 
                 sds_loss.backward()

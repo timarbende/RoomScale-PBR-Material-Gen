@@ -13,6 +13,7 @@ import torchvision
 
 from PIL import Image
 from diffusers import DDIMScheduler, ControlNetModel
+from models.pipeline.pipeline_rgb2x import StableDiffusionAOVMatEstPipeline
 
 # customized
 import sys
@@ -30,7 +31,15 @@ class Guidance(nn.Module):
         self.config = config
         self.device = device
 
-        self.prompt = config.prompt + ", " + config.a_prompt if config.a_prompt else config.prompt
+        self.aov= config.aov
+        prompts = {
+            "albedo": "Albedo (diffuse basecolor)",
+            "normal": "Camera-space Normal",
+            "roughness": "Roughness",
+            "metallic": "Metallicness",
+            "irradiance": "Irradiance (diffuse lighting)",
+        }
+        self.prompt=prompts[self.aov]
         self.n_prompt = config.n_prompt
         
         self.weights_dtype = torch.float16 if self.config.enable_half_precision else torch.float32
@@ -42,6 +51,7 @@ class Guidance(nn.Module):
         self._init_t_schedule()
 
     def _init_backbone(self):
+        # TODO: itt ehelyett kell inicializálni az rgb2x unetjét
         if self.config.diffusion_type == "t2i":
             from diffusers import StableDiffusionPipeline as DiffusionPipeline
             checkpoint_name = "stabilityai/stable-diffusion-2-1-base"
@@ -73,7 +83,13 @@ class Guidance(nn.Module):
         self.tokenizer = diffusion_model.tokenizer
         self.text_encoder = diffusion_model.text_encoder
         self.vae = diffusion_model.vae
-        self.unet = diffusion_model.unet.to(self.weights_dtype)
+        #self.unet = diffusion_model.unet.to(self.weights_dtype)
+        mat_est_pipe = StableDiffusionAOVMatEstPipeline.from_pretrained(
+            "zheng95z/rgb-to-x",
+            torch_dtype=torch.float16,
+            cache_dir=self.config.cache_dir,
+        ).to("cuda")
+        self.unet = mat_est_pipe.unet
 
         self.text_encoder.requires_grad_(False)
         self.vae.requires_grad_(False)
@@ -174,18 +190,36 @@ class Guidance(nn.Module):
 
     def init_text_embeddings(self, batch_size):
         ### get text embedding
-        text_input = self.tokenizer(
+        text_inputs = self.tokenizer(
             [self.prompt], 
             padding="max_length", 
             max_length=self.tokenizer.model_max_length, 
             truncation=True, 
             return_tensors="pt"
-        ).input_ids.to(self.device)
+        )
+        text_input_ids = text_inputs.input_ids.to(self.device)
+        self._check_for_removed_text(text_input_ids)
+
+        if (hasattr(self.text_encoder.config, "use_attention_mask")
+            and self.text_encoder.config.use_attention_mask
+        ):
+            attention_mask = text_inputs.attention_mask.to(self.device)
+        else:
+            attention_mask = None
+
+        """         
+        with torch.no_grad():
+            prompt_embeds = self.text_encoder(
+                text_input_ids,
+                attention_mask=attention_mask,
+            )
+            prompt_embeds = prompt_embeds[0] 
+        """
 
         with torch.no_grad():
-            text_embeddings = self.text_encoder(text_input)[0].repeat(batch_size, 1, 1)
+            text_embeddings = self.text_encoder(text_input_ids)[0].repeat(batch_size, 1, 1)
 
-        max_length = text_input.shape[-1]
+        max_length = text_input_ids.shape[-1]
         uncond_input = self.tokenizer(
             [self.n_prompt], 
             padding="max_length", 
@@ -196,7 +230,39 @@ class Guidance(nn.Module):
         with torch.no_grad():
             uncond_embeddings = self.text_encoder(uncond_input)[0].repeat(batch_size, 1, 1)
 
+        #TODO: rgb2x also does
+        #   prompt_embeds = self.text_encoder(
+        #        text_input_ids.to(device),
+        #        attention_mask=attention_mask,
+        #    )
+        #    prompt_embeds = prompt_embeds[0]
+        #
+        #   where text_input_ids = text_inputs.input_ids
+        #   we should see if we also need this
+
+        # pix2pix has two  negative embeddings, and unlike in other pipelines latents are ordered [prompt_embeds, negative_prompt_embeds, negative_prompt_embeds]
+        # new: self.text_embeddings = torch.cat([text_embeddings, uncond_embeddings, uncond_embeddings])
+        
+        # everything default: torch.cat([uncond_embeddings, text_embeddings]).shape = torch.Size([2, 77, 1024])
+        # .repeat(batch_size, 1, 1) removed: torch.cat([uncond_embeddings, text_embeddings]).shape = torch.Size([2, 77, 1024])
         self.text_embeddings = torch.cat([uncond_embeddings, text_embeddings])
+
+
+    def _check_for_removed_text(self, text_input_ids):
+        untruncated_ids = self.tokenizer(
+                self.prompt, padding="longest", return_tensors="pt"
+            ).input_ids
+        if untruncated_ids.shape[-1] >= text_input_ids.shape[
+                -1
+            ] and not torch.equal(text_input_ids, untruncated_ids):
+                removed_text = self.tokenizer.batch_decode(
+                    untruncated_ids[:, self.tokenizer.model_max_length - 1 : -1]
+                )
+                logger.warning(
+                    "The following part of your input was truncated because CLIP can only handle sequences up to"
+                    f" {self.tokenizer.model_max_length} tokens: {removed_text}"
+                )
+
 
     def prepare_depth_map(self, depth_map):
         assert len(depth_map.shape) == 4
@@ -280,9 +346,10 @@ class Guidance(nn.Module):
         return t, noise, noisy_latents, clean_latents
     
     def predict_noise(self, unet, noisy_latents, t, cross_attention_kwargs, guidance_scale, control=None):
+
         down_block_res_samples, mid_block_res_sample = None, None
 
-        if guidance_scale == 1:
+        if guidance_scale == 1: # NO CFG
             latent_model_input = noisy_latents
             latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
             
@@ -307,38 +374,7 @@ class Guidance(nn.Module):
                     latent_model_input = torch.cat([latent_model_input, control], dim=1)
 
             # if self.config.verbose_mode: start = time.time()
-            noise_pred = unet(
-                latent_model_input.to(self.weights_dtype), 
-                t, 
-                encoder_hidden_states=text_embeddings.to(self.weights_dtype), 
-                cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=down_block_res_samples,
-                mid_block_additional_residual=mid_block_res_sample
-            ).sample.to(torch.float32)
-            # if self.config.verbose_mode: print("=> UNet forward: {}s".format(time.time() - start))
-        else:
-            latent_model_input = torch.cat([noisy_latents] * 2)
-            latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
-            
-            if control is not None: 
-                if "controlnet" in self.config.diffusion_type:
-                    with torch.no_grad():
-                        down_block_res_samples, mid_block_res_sample = self.controlnet(
-                            latent_model_input.to(self.weights_dtype),
-                            t,
-                            encoder_hidden_states=self.text_embeddings.to(self.weights_dtype),
-                            controlnet_cond=torch.cat([control]*2).to(self.weights_dtype),
-                            conditioning_scale=1.0,
-                            guess_mode=False,
-                            return_dict=False,
-                        )
 
-                        down_block_res_samples = [e.to(self.weights_dtype) for e in down_block_res_samples]
-                        mid_block_res_sample = mid_block_res_sample.to(self.weights_dtype)
-                else:
-                    latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
-
-            # if self.config.verbose_mode: start = time.time()
             noise_pred = unet(
                 latent_model_input.to(self.weights_dtype), 
                 t, 
@@ -347,6 +383,36 @@ class Guidance(nn.Module):
                 down_block_additional_residuals=down_block_res_samples,
                 mid_block_additional_residual=mid_block_res_sample
             ).sample.to(torch.float32)
+
+            # if self.config.verbose_mode: print("=> UNet forward: {}s".format(time.time() - start))
+        else:                   # YES CFG
+            latent_model_input = torch.cat([noisy_latents] * 2)
+            latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+            
+            if control is not None: 
+                # latent_model_input.shape = torch.Size([2, 4, 96, 96])
+                # torch.cat([control]*2).shape = torch.Size([2, 512, 512, 4])
+                # latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
+                
+                # From rbg2x: 
+                # Expand the latents if we are doing classifier free guidance.
+                # The latents are expanded 3 times because for pix2pix the guidance\
+                # is applied for both the text and the input image.
+                latent_model_input = (
+                    torch.cat([latents] * 3)
+                )
+
+            # if self.config.verbose_mode: start = time.time()
+
+            noise_pred = unet(
+                latent_model_input.to(self.weights_dtype), 
+                t, 
+                encoder_hidden_states=self.text_embeddings.to(self.weights_dtype), 
+                cross_attention_kwargs=cross_attention_kwargs,
+                down_block_additional_residuals=down_block_res_samples,
+                mid_block_additional_residual=mid_block_res_sample
+            ).sample.to(torch.float32)
+
             # if self.config.verbose_mode: print("=> UNet forward: {}s".format(time.time() - start))
 
             # perform guidance
@@ -378,11 +444,13 @@ class Guidance(nn.Module):
         return loss
     
     def compute_vsd_loss(self, latents, noisy_latents, noise, t, cross_attention_kwargs, control=None):    
+        # 8700MB total
+
         with torch.no_grad():
             # predict the noise residual with unet
             # set cross_attention_kwargs={"scale": 0} to use the pre-trained model
             if self.config.verbose_mode: start = time.time()
-            noise_pred = self.predict_noise(
+            noise_pred = self.predict_noise(       # 2000MB memory
                 self.unet, 
                 noisy_latents, 
                 t, 
@@ -393,7 +461,7 @@ class Guidance(nn.Module):
             if self.config.verbose_mode: print("=> VSD pretrained forward: {}s".format(time.time() - start))
 
             if self.config.verbose_mode: start = time.time()
-            noise_pred_phi = self.predict_noise(
+            noise_pred_phi = self.predict_noise(    # no extra memory
                 self.unet_phi, 
                 noisy_latents, 
                 t, 
@@ -409,14 +477,17 @@ class Guidance(nn.Module):
         grad *= self.loss_weights[int(t)]
         
         # d(loss)/d(latents) = latents - target = latents - (latents - grad) = grad
+
         target = (latents - grad).detach()
         loss = 0.5 * F.mse_loss(latents, target, reduction="none")
 
         return loss, loss.mean()
     
     def compute_vsd_phi_loss(self, noisy_latents, clean_latents, noise, t, cross_attention_kwargs, control=None):
+        # 6800MB at start
         if self.config.verbose_mode: start = time.time()
-        noise_pred_phi = self.predict_noise(
+
+        noise_pred_phi = self.predict_noise(    # this probably is the problem: adds 15000MB memory
             self.unet_phi, 
             noisy_latents, 
             t, 
@@ -431,4 +502,5 @@ class Guidance(nn.Module):
 
         loss = self.config.grad_scale * F.mse_loss(noise_pred_phi, target, reduction="none")
 
+        # 21130MB at end
         return loss, loss.mean()
