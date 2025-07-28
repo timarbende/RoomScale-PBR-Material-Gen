@@ -54,7 +54,7 @@ class Guidance(nn.Module):
         diffusion_model = StableDiffusionDepth2ImgPipeline.from_pretrained("stabilityai/stable-diffusion-2-depth").to(self.device)
         mat_est_pipe = StableDiffusionAOVMatEstPipeline.from_pretrained(
             "zheng95z/rgb-to-x",
-            torch_dtype=torch.float16,
+            torch_dtype=torch.float32,
             cache_dir=self.config.cache_dir,
         ).to(self.device)
 
@@ -73,6 +73,7 @@ class Guidance(nn.Module):
         self.unet.requires_grad_(False)
 
         # use DDIMScheduler by default
+        #TODO: should we use the rgb2x scheduler or this?
         self.scheduler = DDIMScheduler.from_pretrained("stabilityai/stable-diffusion-2-depth", subfolder="scheduler")
         self.scheduler.betas = self.scheduler.betas.to(self.device)
         self.scheduler.alphas = self.scheduler.alphas.to(self.device)
