@@ -12,7 +12,7 @@ import numpy as np
 import torchvision
 
 from PIL import Image
-from diffusers import DDIMScheduler, ControlNetModel
+from diffusers import DDIMScheduler, StableDiffusionDepth2ImgPipeline
 from models.pipeline.pipeline_rgb2x import StableDiffusionAOVMatEstPipeline
 
 # customized
@@ -51,29 +51,12 @@ class Guidance(nn.Module):
         self._init_t_schedule()
 
     def _init_backbone(self):
-        # TODO: itt ehelyett kell inicializálni az rgb2x unetjét
-        if self.config.diffusion_type == "t2i":
-            from diffusers import StableDiffusionPipeline as DiffusionPipeline
-            checkpoint_name = "stabilityai/stable-diffusion-2-1-base"
-            # diffusion_model = DiffusionPipeline.from_pretrained(checkpoint_name).to(self.device)
-            # checkpoint_name = "runwayml/stable-diffusion-v1-5"
-            diffusion_model = DiffusionPipeline.from_pretrained(checkpoint_name).to(self.device)
-        elif self.config.diffusion_type == "d2i":
-            from diffusers import StableDiffusionDepth2ImgPipeline as DiffusionPipeline
-            checkpoint_name = "stabilityai/stable-diffusion-2-depth"
-            diffusion_model = DiffusionPipeline.from_pretrained(checkpoint_name).to(self.device)
-        elif self.config.diffusion_type == "d2i_controlnet":
-            from diffusers import StableDiffusionControlNetPipeline as DiffusionPipeline
-            controlnet_name = "lllyasviel/control_v11f1p_sd15_depth"
-            controlnet = ControlNetModel.from_pretrained(controlnet_name)
-            checkpoint_name = "runwayml/stable-diffusion-v1-5"
-            diffusion_model = DiffusionPipeline.from_pretrained(checkpoint_name, controlnet=controlnet).to(self.device)
-
-            # freeze controlnet
-            self.controlnet = diffusion_model.controlnet.to(self.weights_dtype)
-            self.controlnet.requires_grad_(False)
-        else:
-            raise ValueError("invalid diffusion type.")
+        diffusion_model = StableDiffusionDepth2ImgPipeline.from_pretrained("stabilityai/stable-diffusion-2-depth").to(self.device)
+        mat_est_pipe = StableDiffusionAOVMatEstPipeline.from_pretrained(
+            "zheng95z/rgb-to-x",
+            torch_dtype=torch.float16,
+            cache_dir=self.config.cache_dir,
+        ).to(self.device)
 
         if self.config.enable_memory_efficient_attention:
             print("=> Enable memory efficient attention.")
@@ -83,42 +66,19 @@ class Guidance(nn.Module):
         self.tokenizer = diffusion_model.tokenizer
         self.text_encoder = diffusion_model.text_encoder
         self.vae = diffusion_model.vae
-        #self.unet = diffusion_model.unet.to(self.weights_dtype)
-        mat_est_pipe = StableDiffusionAOVMatEstPipeline.from_pretrained(
-            "zheng95z/rgb-to-x",
-            torch_dtype=torch.float16,
-            cache_dir=self.config.cache_dir,
-        ).to("cuda")
-        self.unet = mat_est_pipe.unet
+        self.unet = mat_est_pipe.unet.to(self.weights_dtype)
 
         self.text_encoder.requires_grad_(False)
         self.vae.requires_grad_(False)
         self.unet.requires_grad_(False)
 
         # use DDIMScheduler by default
-        self.scheduler = DDIMScheduler.from_pretrained(checkpoint_name, subfolder="scheduler")
+        self.scheduler = DDIMScheduler.from_pretrained("stabilityai/stable-diffusion-2-depth", subfolder="scheduler")
         self.scheduler.betas = self.scheduler.betas.to(self.device)
         self.scheduler.alphas = self.scheduler.alphas.to(self.device)
         self.scheduler.alphas_cumprod = self.scheduler.alphas_cumprod.to(self.device)
-
         self.num_train_timesteps = len(self.scheduler.betas)
-
-        if self.config.generation_mode == "t2i":
-            self.scheduler.set_timesteps(self.config.num_steps)
-            raise NotImplementedError
-        else:
-            self.scheduler.set_timesteps(self.num_train_timesteps)
-
-        # phi
-        # unet_phi is the same instance as unet that has been modified in-place
-        # unet_phi not grad -> only train unet_phi_layers
-        if self.config.loss_type == "vsd":
-            self.unet_phi, self.unet_phi_layers = extract_lora_diffusers(self.unet, self.device)
-
-            # load pretrained lora
-            if len(self.config.load_lora_weights) > 0 and os.path.exists(self.config.load_lora_weights):
-                print("=> loading pretrained LoRA weights from: {}".format(self.config.load_lora_weights))
-                self.unet_phi.load_attn_procs(self.config.load_lora_weights)
+        self.scheduler.set_timesteps(self.num_train_timesteps)
 
         # loss weights
         self.loss_weights = self._init_loss_weights(self.scheduler.betas)
@@ -126,11 +86,6 @@ class Guidance(nn.Module):
         self.avg_loss_vsd = []
         self.avg_loss_phi = []
         self.avg_loss_rgb = []
-
-        if self.config.loss_type == "l2": 
-            self.label = torchvision.io.read_image(self.config.label_path).float().to(self.device) / 255.
-            self.label = self.label * 2 - 1 # -1 to 1
-            self.label = self.label.unsqueeze(0)
 
         max_memory_allocated = torch.cuda.max_memory_allocated()
         print(f"=> Maximum GPU memory allocated by PyTorch: {max_memory_allocated / 1024**3:.2f} GB")
@@ -262,30 +217,6 @@ class Guidance(nn.Module):
                     "The following part of your input was truncated because CLIP can only handle sequences up to"
                     f" {self.tokenizer.model_max_length} tokens: {removed_text}"
                 )
-
-
-    def prepare_depth_map(self, depth_map):
-        assert len(depth_map.shape) == 4
-        if "controlnet" in self.config.diffusion_type:
-            depth_map = depth_map.repeat(1, 3, 1, 1).float()
-            depth_map = F.interpolate(depth_map, (self.config.render_size, self.config.render_size), mode="bilinear", align_corners=False)
-        
-            # expected range [0,1]
-            depth_map /= 255.0
-        else:
-            # down-sample and normalize
-            depth_map = F.interpolate(depth_map, (self.config.latent_size, self.config.latent_size), mode="bilinear", align_corners=False)
-
-            # expected range [-1,1]
-            depth_min = torch.amin(depth_map, dim=[1, 2, 3], keepdim=True)
-            depth_max = torch.amax(depth_map, dim=[1, 2, 3], keepdim=True)
-            depth_map = 2.0 * (depth_map - depth_min) / (depth_max - depth_min) - 1.0
-            # depth_map /= 255.0
-            # depth_map = 2.0 * depth_map - 1.0
-
-        depth_map = depth_map.to(torch.float32)
-
-        return depth_map
     
     @torch.no_grad()
     def decode_latent_texture(self, inputs, use_patches=False):
@@ -326,11 +257,6 @@ class Guidance(nn.Module):
         sample = mean + std * torch.randn_like(mean)
         
         return self.vae.config.scaling_factor * sample
-
-    def normalize_latent_texture(self, inputs):
-        outputs = (inputs / 2 + 0.5).clamp(0, 1)
-
-        return outputs
     
     def prepare_one_latent(self, latents, t):
         noise = torch.randn_like(latents).to(self.device)
@@ -442,65 +368,3 @@ class Guidance(nn.Module):
         loss = 0.5 * F.mse_loss(latents, target, reduction="mean")
 
         return loss
-    
-    def compute_vsd_loss(self, latents, noisy_latents, noise, t, cross_attention_kwargs, control=None):    
-        # 8700MB total
-
-        with torch.no_grad():
-            # predict the noise residual with unet
-            # set cross_attention_kwargs={"scale": 0} to use the pre-trained model
-            if self.config.verbose_mode: start = time.time()
-            noise_pred = self.predict_noise(       # 2000MB memory
-                self.unet, 
-                noisy_latents, 
-                t, 
-                cross_attention_kwargs={"scale": 0},
-                guidance_scale=self.config.guidance_scale,
-                control=control
-            )
-            if self.config.verbose_mode: print("=> VSD pretrained forward: {}s".format(time.time() - start))
-
-            if self.config.verbose_mode: start = time.time()
-            noise_pred_phi = self.predict_noise(    # no extra memory
-                self.unet_phi, 
-                noisy_latents, 
-                t, 
-                cross_attention_kwargs=cross_attention_kwargs,
-                guidance_scale=self.config.guidance_scale_phi,
-                control=control
-            )
-            if self.config.verbose_mode: print("=> VSD lora forward: {}s".format(time.time() - start))
-
-        grad = self.config.grad_scale * (noise_pred - noise_pred_phi.detach())
-        grad = torch.nan_to_num(grad)
-
-        grad *= self.loss_weights[int(t)]
-        
-        # d(loss)/d(latents) = latents - target = latents - (latents - grad) = grad
-
-        target = (latents - grad).detach()
-        loss = 0.5 * F.mse_loss(latents, target, reduction="none")
-
-        return loss, loss.mean()
-    
-    def compute_vsd_phi_loss(self, noisy_latents, clean_latents, noise, t, cross_attention_kwargs, control=None):
-        # 6800MB at start
-        if self.config.verbose_mode: start = time.time()
-
-        noise_pred_phi = self.predict_noise(    # this probably is the problem: adds 15000MB memory
-            self.unet_phi, 
-            noisy_latents, 
-            t, 
-            cross_attention_kwargs=cross_attention_kwargs,
-            guidance_scale=self.config.guidance_scale_phi,
-            control=control
-        )
-
-        if self.config.verbose_mode: print("=> phi lora forward: {}s".format(time.time() - start))
-
-        target = noise
-
-        loss = self.config.grad_scale * F.mse_loss(noise_pred_phi, target, reduction="none")
-
-        # 21130MB at end
-        return loss, loss.mean()
