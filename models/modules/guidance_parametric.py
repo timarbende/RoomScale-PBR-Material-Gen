@@ -280,9 +280,9 @@ class Guidance(nn.Module):
             # Expand the latents if we are doing classifier free guidance.
             # The latents are expanded 3 times because for pix2pix the guidance\
             # is applied for both the text and the input image.
-            latent_model_input = (
-                torch.cat([latents] * 3)                
-            )
+            #latent_model_input = (
+            #    torch.cat([latents] * 3)                
+            #)
 
             latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
 
