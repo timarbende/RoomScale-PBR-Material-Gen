@@ -694,6 +694,7 @@ class StableDiffusionAOVMatEstPipeline(
         timesteps = self.scheduler.timesteps
 
         # 5. Prepare Image latents
+        # this is encoded conditioning image
         image_latents = self.prepare_image_latents(
             preprocessed_photo,
             batch_size,
@@ -710,6 +711,7 @@ class StableDiffusionAOVMatEstPipeline(
         width = width * self.vae_scale_factor
 
         # 6. Prepare latent variables
+        # this is the optimizable noise map
         num_channels_latents = self.unet.config.out_channels
         latents = self.prepare_latents(
             batch_size * num_images_per_prompt,

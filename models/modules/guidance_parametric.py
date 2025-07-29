@@ -51,6 +51,7 @@ class Guidance(nn.Module):
         self._init_t_schedule()
 
     def _init_backbone(self):
+        #TODO: remove original diffusion model (only rgb2x)
         diffusion_model = StableDiffusionDepth2ImgPipeline.from_pretrained("stabilityai/stable-diffusion-2-depth").to(self.device)
         mat_est_pipe = StableDiffusionAOVMatEstPipeline.from_pretrained(
             "zheng95z/rgb-to-x",
@@ -73,7 +74,7 @@ class Guidance(nn.Module):
         self.unet.requires_grad_(False)
 
         # use DDIMScheduler by default
-        #TODO: should we use the rgb2x scheduler or this?
+        #TODO: use rgb2x scheduler (just in case)
         self.scheduler = DDIMScheduler.from_pretrained("stabilityai/stable-diffusion-2-depth", subfolder="scheduler")
         self.scheduler.betas = self.scheduler.betas.to(self.device)
         self.scheduler.alphas = self.scheduler.alphas.to(self.device)
@@ -186,16 +187,6 @@ class Guidance(nn.Module):
         with torch.no_grad():
             uncond_embeddings = self.text_encoder(uncond_input)[0].repeat(batch_size, 1, 1)
 
-        #TODO: rgb2x also does
-        #   prompt_embeds = self.text_encoder(
-        #        text_input_ids.to(device),
-        #        attention_mask=attention_mask,
-        #    )
-        #    prompt_embeds = prompt_embeds[0]
-        #
-        #   where text_input_ids = text_inputs.input_ids
-        #   we should see if we also need this
-
         # pix2pix has two  negative embeddings, and unlike in other pipelines latents are ordered [prompt_embeds, negative_prompt_embeds, negative_prompt_embeds]
         # new: self.text_embeddings = torch.cat([text_embeddings, uncond_embeddings, uncond_embeddings])
         
@@ -276,76 +267,43 @@ class Guidance(nn.Module):
 
         down_block_res_samples, mid_block_res_sample = None, None
 
-        if guidance_scale == 1: # NO CFG
-            latent_model_input = noisy_latents
-            latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+        # only kept CFG branch of if-else
+        latent_model_input = torch.cat([noisy_latents] * 2)
+        latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
             
-            text_embeddings, _ = self.text_embeddings.chunk(2)
-
-            if control is not None: 
-                if "controlnet" in self.config.diffusion_type:
-                    with torch.no_grad():
-                        down_block_res_samples, mid_block_res_sample = self.controlnet(
-                            latent_model_input.to(self.weights_dtype),
-                            t,
-                            encoder_hidden_states=text_embeddings.to(self.weights_dtype),
-                            controlnet_cond=control.to(self.weights_dtype),
-                            conditioning_scale=1.0,
-                            guess_mode=False,
-                            return_dict=False,
-                        )
-
-                        down_block_res_samples = [e.to(self.weights_dtype) for e in down_block_res_samples]
-                        mid_block_res_sample = mid_block_res_sample.to(self.weights_dtype)
-                else:
-                    latent_model_input = torch.cat([latent_model_input, control], dim=1)
-
-            # if self.config.verbose_mode: start = time.time()
-
-            noise_pred = unet(
-                latent_model_input.to(self.weights_dtype), 
-                t, 
-                encoder_hidden_states=self.text_embeddings.to(self.weights_dtype), 
-                cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=down_block_res_samples,
-                mid_block_additional_residual=mid_block_res_sample
-            ).sample.to(torch.float32)
-
-            # if self.config.verbose_mode: print("=> UNet forward: {}s".format(time.time() - start))
-        else:                   # YES CFG
-            latent_model_input = torch.cat([noisy_latents] * 2)
-            latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
-            
-            if control is not None: 
-                # latent_model_input.shape = torch.Size([2, 4, 96, 96])
-                # torch.cat([control]*2).shape = torch.Size([2, 512, 512, 4])
-                # latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
+        if control is not None: 
+            # latent_model_input.shape = torch.Size([2, 4, 96, 96])
+            # torch.cat([control]*2).shape = torch.Size([2, 512, 512, 4])
+            # latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
                 
-                # From rbg2x: 
-                # Expand the latents if we are doing classifier free guidance.
-                # The latents are expanded 3 times because for pix2pix the guidance\
-                # is applied for both the text and the input image.
-                latent_model_input = (
-                    torch.cat([latents] * 3)
-                )
+            # From rbg2x: 
+            # Expand the latents if we are doing classifier free guidance.
+            # The latents are expanded 3 times because for pix2pix the guidance\
+            # is applied for both the text and the input image.
+            latent_model_input = (
+                torch.cat([latents] * 3)                
+            )
 
-            # if self.config.verbose_mode: start = time.time()
+            latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
 
-            noise_pred = unet(
-                latent_model_input.to(self.weights_dtype), 
-                t, 
-                encoder_hidden_states=self.text_embeddings.to(self.weights_dtype), 
-                cross_attention_kwargs=cross_attention_kwargs,
-                down_block_additional_residuals=down_block_res_samples,
-                mid_block_additional_residual=mid_block_res_sample
-            ).sample.to(torch.float32)
+        noise_pred = unet(
+            latent_model_input.to(self.weights_dtype), 
+            t, 
+            encoder_hidden_states=self.text_embeddings.to(self.weights_dtype), 
+            cross_attention_kwargs=cross_attention_kwargs,
+            down_block_additional_residuals=down_block_res_samples,
+            mid_block_additional_residual=mid_block_res_sample
+        ).sample.to(torch.float32)
 
-            # if self.config.verbose_mode: print("=> UNet forward: {}s".format(time.time() - start))
+        # perform guidance
+        noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+        noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-            # perform guidance
-            noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-            noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
-
+        # TODO: rgb2x returns noise_pred = (
+        # noise_pred_uncond
+        # + guidance_scale * (noise_pred_text - noise_pred_image)
+        # + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
+        # )
         return noise_pred
 
     def compute_sds_loss(self, latents, noisy_latents, noise, t, control=None):
@@ -365,7 +323,21 @@ class Guidance(nn.Module):
         grad *= self.loss_weights[int(t)]
         
         # d(loss)/d(latents) = latents - target = latents - (latents - grad) = grad
+
+        # TODO: in the long run we will probably need to use image-space loss (decode into rgb and compute loss there)
         target = (latents - grad).detach()
         loss = 0.5 * F.mse_loss(latents, target, reduction="mean")
 
         return loss
+    
+    def encode_image(self, image):
+        # this line only works for singular batch. for batch with multiple elements check rgb2x prepare_image_latents
+        image_latents = self.vae.encode(image).latent_dist.mode()
+        image_latents = torch.cat([image_latents], dim=0)
+
+        uncond_image_latents = torch.zeros_like(image_latents)  # for classifier-free guidance
+        image_latents = torch.cat(
+                [image_latents, image_latents, uncond_image_latents], dim=0
+            )
+        
+        return image_latents

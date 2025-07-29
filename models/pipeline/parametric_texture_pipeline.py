@@ -174,8 +174,7 @@ class TexturePipeline(nn.Module):
         with open(os.path.join(self.log_dir, "config.yaml"), "w") as f:
             OmegaConf.save(config=self.config, f=f)
 
-        self.avg_loss_vsd = []
-        self.avg_loss_phi = []
+        self.avg_loss_sds = []
 
     def _get_texture_parameters(self):
         if "hashgrid" not in self.config.texture_type:
@@ -300,7 +299,7 @@ class TexturePipeline(nn.Module):
 
         return mesh, texture, background_mesh, background_texture
 
-    def forward(self, camera, inference=False, downsample=True, normalize_depth=True, is_direct=False):
+    def forward(self, camera, inference=False, downsample=True, is_direct=False):
         renderer = self.studio.set_renderer(camera, self.config.render_size)
 
         mesh, texture, background_mesh, background_texture = self._prepare_mesh(inference)
@@ -309,7 +308,7 @@ class TexturePipeline(nn.Module):
 
         # for VSD -> 512x512
         # this is to get more texels involved
-        latents, abs_depth, rel_depth = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
+        latents, _, _ = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
         latents = latents.permute(0, 3, 1, 2)
 
         if downsample:
@@ -320,11 +319,7 @@ class TexturePipeline(nn.Module):
             else:
                 raise ValueError("invalid downsampling mode.")
 
-        rel_depth_normalized = rel_depth.unsqueeze(1)
-        if normalize_depth:
-            rel_depth_normalized = self.guidance.prepare_depth_map(rel_depth_normalized) # -1 - 1
-
-        return latents, abs_depth, rel_depth, rel_depth_normalized
+        return latents
 
     @torch.no_grad()
     def _benchmark_step(self, image, text):
@@ -364,10 +359,21 @@ class TexturePipeline(nn.Module):
             )
         )
 
+        #TODO: remove last channel (if it is alpha)
         images = renderer(self.conditioning_mesh)
         return images
 
     def fit(self):
+
+        # 1.: define batch_size, device, do_classifier_free_guidance
+        # 2.: decode prompt
+        # 3.: preprocess the image
+        # 4.: set timesteps
+        # 5.: prepare image latents (get height and width and take product with vae_scale_factor)
+        # 6.: prepare latent variables
+        # 7.: prepare extra step kwargs: add eta generator for DDIM
+        # 8.: denoise
+
         pbar = tqdm(self.guidance.chosen_ts)
 
         self.guidance.init_text_embeddings(self.config.batch_size)
@@ -377,80 +383,34 @@ class TexturePipeline(nn.Module):
             Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
             cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
-            latents, _, _, rel_depth_normalized = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
+            latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
             conditioning_image = self.render_conditioning_image()
+            conditioning_image = self.guidance.encode_image(conditioning_image)
+            # by default: conditioning_image.shape = torch.Size([1, 512, 512, 4])
+            # after encoding:
+            #TODO: encode conditioning image
 
             # compute loss
-            if self.config.loss_type == "sds":
-                
-                self.texture_optimizer.zero_grad()
+            self.texture_optimizer.zero_grad()
 
-                sds_loss = self.guidance.compute_sds_loss(
-                    latents, noisy_latents, noise, t.to(latents.dtype), 
-                    control=rel_depth_normalized
-                )
+            sds_loss = self.guidance.compute_sds_loss(
+                latents, noisy_latents, noise, t.to(latents.dtype), 
+                control=conditioning_image
+            )
 
-                sds_loss.backward()
-                self.texture_optimizer.step()
-
-                vsd_loss = sds_loss
-                vsd_phi_loss = torch.zeros_like(vsd_loss)
-
-            elif self.config.loss_type == "vsd":
-
-                # VSD
-                self.texture_optimizer.zero_grad()
-
-                vsd_loss_pixel, vsd_loss = self.guidance.compute_vsd_loss(
-                    latents, noisy_latents, noise, t.to(latents.dtype), 
-                    cross_attention_kwargs={'scale': self.config.phi_scale},
-                    control=rel_depth_normalized if "d2i" in self.config.diffusion_type else None
-                )
-
-                vsd_loss.backward()
-                
-                self.texture_optimizer.step()
-
-                # phi
-                torch.cuda.empty_cache()
-
-                self.phi_optimizer.zero_grad()
-
-                if self.config.use_different_t:
-                    t_phi = random.choice(range(self.guidance.num_train_timesteps))
-                else:
-                    t_phi = chosen_t
-
-                t_phi, noise_phi, noisy_latents_phi, clean_latents_phi = self.guidance.prepare_latents(latents, t_phi, self.config.batch_size)
-                
-                vsd_phi_loss_pixel, vsd_phi_loss = self.guidance.compute_vsd_phi_loss(
-                    noisy_latents_phi.detach(), clean_latents_phi, noise_phi, t_phi.to(latents.dtype), 
-                    cross_attention_kwargs={'scale': self.config.phi_scale},
-                    control=rel_depth_normalized if "d2i" in self.config.diffusion_type else None
-                )
-
-                vsd_phi_loss.backward()
-                self.phi_optimizer.step()
-
-            elif self.config.loss_type == "l2": # only for debugging
-
-                raise NotImplementedError
-
-            else:
-                raise ValueError("invalid loss type")
+            sds_loss.backward()
+            self.texture_optimizer.step()
             
             if(self.config.use_wandb):
                 wandb.log({
-                    "train/vsd_loss": vsd_loss.item(),
-                    "train/vsd_lora_loss": vsd_phi_loss.item()
+                    "train/sds_loss": sds_loss.item(),
                 })
             
-            self.avg_loss_vsd.append(vsd_loss.item())
-            self.avg_loss_phi.append(vsd_phi_loss.item())
+            self.avg_loss_sds.append(sds_loss.item())
             
             max_memory_allocated = torch.cuda.max_memory_allocated()
-            pbar.set_description(f'Loss: {vsd_loss.item():.6f}, sampled t : {t.item()}, GPU: {max_memory_allocated / 1024**3:.2f} GB')
+            pbar.set_description(f'Loss: {sds_loss.item():.6f}, sampled t : {t.item()}, GPU: {max_memory_allocated / 1024**3:.2f} GB')
             
             if step % self.config.log_steps == 0:
 
@@ -528,3 +488,174 @@ class TexturePipeline(nn.Module):
                         "train/avg_loss_lora": np.mean(self.avg_loss_phi),
                         "train/clip_score": np.mean(clip_scores)
                     })
+
+    def rgb2x_call(self):
+        # 0. Check inputs
+        self.check_inputs(
+            prompt,
+            callback_steps,
+            negative_prompt,
+            prompt_embeds,
+            negative_prompt_embeds,
+        )
+
+        # 1. Define call parameters
+        if prompt is not None and isinstance(prompt, str):
+            batch_size = 1
+        elif prompt is not None and isinstance(prompt, list):
+            batch_size = len(prompt)
+        else:
+            batch_size = prompt_embeds.shape[0]
+
+        device = self._execution_device
+        do_classifier_free_guidance = (
+            guidance_scale > 1.0 and image_guidance_scale >= 1.0
+        )
+        # check if scheduler is in sigmas space
+        scheduler_is_in_sigma_space = hasattr(self.scheduler, "sigmas")
+
+        # 2. Encode input prompt
+        prompt_embeds = self._encode_prompt(
+            prompt,
+            device,
+            num_images_per_prompt,
+            do_classifier_free_guidance,
+            negative_prompt,
+            prompt_embeds=prompt_embeds,
+            negative_prompt_embeds=negative_prompt_embeds,
+        )
+
+        # 3. Preprocess image
+        # Normalize image to [-1,1]
+        preprocessed_photo = self.image_processor.preprocess(photo)
+
+        # 4. set timesteps
+        self.scheduler.set_timesteps(num_inference_steps, device=device)
+        timesteps = self.scheduler.timesteps
+
+        # 5. Prepare Image latents
+        image_latents = self.prepare_image_latents(
+            preprocessed_photo,
+            batch_size,
+            num_images_per_prompt,
+            prompt_embeds.dtype,
+            device,
+            do_classifier_free_guidance,
+            generator,
+        )
+        image_latents = image_latents * self.vae.config.scaling_factor
+
+        height, width = image_latents.shape[-2:]
+        height = height * self.vae_scale_factor
+        width = width * self.vae_scale_factor
+
+        # 6. Prepare latent variables
+        num_channels_latents = self.unet.config.out_channels
+        latents = self.prepare_latents(
+            batch_size * num_images_per_prompt,
+            num_channels_latents,
+            height,
+            width,
+            prompt_embeds.dtype,
+            device,
+            generator,
+            latents,
+        )
+
+        # 7. Check that shapes of latents and image match the UNet channels
+        num_channels_image = image_latents.shape[1]
+        if num_channels_latents + num_channels_image != self.unet.config.in_channels:
+            raise ValueError(
+                f"Incorrect configuration settings! The config of `pipeline.unet`: {self.unet.config} expects"
+                f" {self.unet.config.in_channels} but received `num_channels_latents`: {num_channels_latents} +"
+                f" `num_channels_image`: {num_channels_image} "
+                f" = {num_channels_latents+num_channels_image}. Please verify the config of"
+                " `pipeline.unet` or your `image` input."
+            )
+
+        # 8. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
+        extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
+
+        # 9. Denoising loop
+        num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+        with self.progress_bar(total=num_inference_steps) as progress_bar:
+            for i, t in enumerate(timesteps):
+                # Expand the latents if we are doing classifier free guidance.
+                # The latents are expanded 3 times because for pix2pix the guidance\
+                # is applied for both the text and the input image.
+                latent_model_input = (
+                    torch.cat([latents] * 3) if do_classifier_free_guidance else latents
+                )
+
+                # concat latents, image_latents in the channel dimension
+                scaled_latent_model_input = self.scheduler.scale_model_input(
+                    latent_model_input, t
+                )
+                scaled_latent_model_input = torch.cat(
+                    [scaled_latent_model_input, image_latents], dim=1
+                )
+
+                # predict the noise residual
+                noise_pred = self.unet(
+                    scaled_latent_model_input,
+                    t,
+                    encoder_hidden_states=prompt_embeds,
+                    return_dict=False,
+                )[0]
+
+                # perform guidance
+                if do_classifier_free_guidance:
+                    (
+                        noise_pred_text,
+                        noise_pred_image,
+                        noise_pred_uncond,
+                    ) = noise_pred.chunk(3)
+                    noise_pred = (
+                        noise_pred_uncond
+                        + guidance_scale * (noise_pred_text - noise_pred_image)
+                        + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
+                    )
+
+                if do_classifier_free_guidance and guidance_rescale > 0.0:
+                    # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
+                    noise_pred = rescale_noise_cfg(
+                        noise_pred, noise_pred_text, guidance_rescale=guidance_rescale
+                    )
+
+                # compute the previous noisy sample x_t -> x_t-1
+                latents = self.scheduler.step(
+                    noise_pred, t, latents, **extra_step_kwargs, return_dict=False
+                )[0]
+
+                # call the callback, if provided
+                if i == len(timesteps) - 1 or (
+                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+                ):
+                    progress_bar.update()
+                    if callback is not None and i % callback_steps == 0:
+                        callback(i, t, latents)
+
+            aov_latents = latents / self.vae.config.scaling_factor
+            aov = self.vae.decode(aov_latents, return_dict=False)[0]
+            do_denormalize = [True] * aov.shape[0]
+            aov_name = required_aovs[0]
+            if aov_name == "albedo" or aov_name == "irradiance":
+                do_gamma_correction = True
+            else:
+                do_gamma_correction = False
+
+            if aov_name == "roughness" or aov_name == "metallic":
+                aov = aov[:, 0:1].repeat(1, 3, 1, 1)
+
+            aov = self.image_processor.postprocess(
+                aov,
+                output_type=output_type,
+                do_denormalize=do_denormalize,
+                do_gamma_correction=do_gamma_correction,
+            )
+            aovs = [aov]
+
+        # Offload last model to CPU
+        if hasattr(self, "final_offload_hook") and self.final_offload_hook is not None:
+            self.final_offload_hook.offload()
+        return StableDiffusionAOVPipelineOutput(images=aovs)
