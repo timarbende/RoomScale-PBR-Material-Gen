@@ -189,10 +189,8 @@ class Guidance(nn.Module):
 
         # pix2pix has two  negative embeddings, and unlike in other pipelines latents are ordered [prompt_embeds, negative_prompt_embeds, negative_prompt_embeds]
         # new: self.text_embeddings = torch.cat([text_embeddings, uncond_embeddings, uncond_embeddings])
-        
-        # everything default: torch.cat([uncond_embeddings, text_embeddings]).shape = torch.Size([2, 77, 1024])
-        # .repeat(batch_size, 1, 1) removed: torch.cat([uncond_embeddings, text_embeddings]).shape = torch.Size([2, 77, 1024])
-        self.text_embeddings = torch.cat([uncond_embeddings, text_embeddings])
+
+        self.text_embeddings = torch.cat([text_embeddings, uncond_embeddings, uncond_embeddings])
 
 
     def _check_for_removed_text(self, text_input_ids):
