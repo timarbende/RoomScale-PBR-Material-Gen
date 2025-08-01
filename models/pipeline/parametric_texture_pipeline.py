@@ -340,7 +340,7 @@ class TexturePipeline(nn.Module):
         Rs, Ts, fovs, _ = self.studio.sample_cameras(0, self.config.batch_size, self.config.use_random_cameras)
         cameras = FoVPerspectiveCameras(R=Rs, T=Ts, device=self.device, fov=fovs)
         raster_settings = RasterizationSettings(
-            image_size=512, 
+            image_size=self.config.render_size, 
             blur_radius=0.0, 
             faces_per_pixel=1, 
         )
@@ -372,6 +372,7 @@ class TexturePipeline(nn.Module):
 
     def fit(self):
 
+        # rgbx pipeline:
         # 1.: define batch_size, device, do_classifier_free_guidance
         # 2.: decode prompt
         # 3.: preprocess the image
@@ -496,174 +497,3 @@ class TexturePipeline(nn.Module):
                         "train/avg_loss_lora": np.mean(self.avg_loss_phi),
                         "train/clip_score": np.mean(clip_scores)
                     })
-
-    def rgb2x_call(self):
-        # 0. Check inputs
-        self.check_inputs(
-            prompt,
-            callback_steps,
-            negative_prompt,
-            prompt_embeds,
-            negative_prompt_embeds,
-        )
-
-        # 1. Define call parameters
-        if prompt is not None and isinstance(prompt, str):
-            batch_size = 1
-        elif prompt is not None and isinstance(prompt, list):
-            batch_size = len(prompt)
-        else:
-            batch_size = prompt_embeds.shape[0]
-
-        device = self._execution_device
-        do_classifier_free_guidance = (
-            guidance_scale > 1.0 and image_guidance_scale >= 1.0
-        )
-        # check if scheduler is in sigmas space
-        scheduler_is_in_sigma_space = hasattr(self.scheduler, "sigmas")
-
-        # 2. Encode input prompt
-        prompt_embeds = self._encode_prompt(
-            prompt,
-            device,
-            num_images_per_prompt,
-            do_classifier_free_guidance,
-            negative_prompt,
-            prompt_embeds=prompt_embeds,
-            negative_prompt_embeds=negative_prompt_embeds,
-        )
-
-        # 3. Preprocess image
-        # Normalize image to [-1,1]
-        preprocessed_photo = self.image_processor.preprocess(photo)
-
-        # 4. set timesteps
-        self.scheduler.set_timesteps(num_inference_steps, device=device)
-        timesteps = self.scheduler.timesteps
-
-        # 5. Prepare Image latents
-        image_latents = self.prepare_image_latents(
-            preprocessed_photo,
-            batch_size,
-            num_images_per_prompt,
-            prompt_embeds.dtype,
-            device,
-            do_classifier_free_guidance,
-            generator,
-        )
-        image_latents = image_latents * self.vae.config.scaling_factor
-
-        height, width = image_latents.shape[-2:]
-        height = height * self.vae_scale_factor
-        width = width * self.vae_scale_factor
-
-        # 6. Prepare latent variables
-        num_channels_latents = self.unet.config.out_channels
-        latents = self.prepare_latents(
-            batch_size * num_images_per_prompt,
-            num_channels_latents,
-            height,
-            width,
-            prompt_embeds.dtype,
-            device,
-            generator,
-            latents,
-        )
-
-        # 7. Check that shapes of latents and image match the UNet channels
-        num_channels_image = image_latents.shape[1]
-        if num_channels_latents + num_channels_image != self.unet.config.in_channels:
-            raise ValueError(
-                f"Incorrect configuration settings! The config of `pipeline.unet`: {self.unet.config} expects"
-                f" {self.unet.config.in_channels} but received `num_channels_latents`: {num_channels_latents} +"
-                f" `num_channels_image`: {num_channels_image} "
-                f" = {num_channels_latents+num_channels_image}. Please verify the config of"
-                " `pipeline.unet` or your `image` input."
-            )
-
-        # 8. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
-        extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
-
-        # 9. Denoising loop
-        num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
-        with self.progress_bar(total=num_inference_steps) as progress_bar:
-            for i, t in enumerate(timesteps):
-                # Expand the latents if we are doing classifier free guidance.
-                # The latents are expanded 3 times because for pix2pix the guidance\
-                # is applied for both the text and the input image.
-                latent_model_input = (
-                    torch.cat([latents] * 3) if do_classifier_free_guidance else latents
-                )
-
-                # concat latents, image_latents in the channel dimension
-                scaled_latent_model_input = self.scheduler.scale_model_input(
-                    latent_model_input, t
-                )
-                scaled_latent_model_input = torch.cat(
-                    [scaled_latent_model_input, image_latents], dim=1
-                )
-
-                # predict the noise residual
-                noise_pred = self.unet(
-                    scaled_latent_model_input,
-                    t,
-                    encoder_hidden_states=prompt_embeds,
-                    return_dict=False,
-                )[0]
-
-                # perform guidance
-                if do_classifier_free_guidance:
-                    (
-                        noise_pred_text,
-                        noise_pred_image,
-                        noise_pred_uncond,
-                    ) = noise_pred.chunk(3)
-                    noise_pred = (
-                        noise_pred_uncond
-                        + guidance_scale * (noise_pred_text - noise_pred_image)
-                        + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
-                    )
-
-                if do_classifier_free_guidance and guidance_rescale > 0.0:
-                    # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
-                    noise_pred = rescale_noise_cfg(
-                        noise_pred, noise_pred_text, guidance_rescale=guidance_rescale
-                    )
-
-                # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(
-                    noise_pred, t, latents, **extra_step_kwargs, return_dict=False
-                )[0]
-
-                # call the callback, if provided
-                if i == len(timesteps) - 1 or (
-                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
-                ):
-                    progress_bar.update()
-                    if callback is not None and i % callback_steps == 0:
-                        callback(i, t, latents)
-
-            aov_latents = latents / self.vae.config.scaling_factor
-            aov = self.vae.decode(aov_latents, return_dict=False)[0]
-            do_denormalize = [True] * aov.shape[0]
-            aov_name = required_aovs[0]
-            if aov_name == "albedo" or aov_name == "irradiance":
-                do_gamma_correction = True
-            else:
-                do_gamma_correction = False
-
-            if aov_name == "roughness" or aov_name == "metallic":
-                aov = aov[:, 0:1].repeat(1, 3, 1, 1)
-
-            aov = self.image_processor.postprocess(
-                aov,
-                output_type=output_type,
-                do_denormalize=do_denormalize,
-                do_gamma_correction=do_gamma_correction,
-            )
-            aovs = [aov]
-
-        # Offload last model to CPU
-        if hasattr(self, "final_offload_hook") and self.final_offload_hook is not None:
-            self.final_offload_hook.offload()
-        return StableDiffusionAOVPipelineOutput(images=aovs)

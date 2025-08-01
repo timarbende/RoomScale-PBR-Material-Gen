@@ -273,9 +273,9 @@ class Guidance(nn.Module):
         # TODO: do we keep this?
         #latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
-        scaled_latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+        scaled_latent_model_input = self.scheduler.scale_model_input(latent_model_input, t) # scaled_latent_model_input.shape = torch.Size([3, 4, 96, 96])
             
-        if control is not None:    # control.shape = torch.Size([3, 4, 64, 64])             
+        if control is not None:    # control.shape = torch.Size([3, 4, 96, 96])
             # scaled_latent_model_input.shape = torch.Size([3, 4, 96, 96])
             # control.shape = torch.Size([9, 4, 64, 64])
             scaled_latent_model_input = torch.cat(
