@@ -268,16 +268,14 @@ class Guidance(nn.Module):
         # only kept CFG branch of if-else
         latent_model_input = (
                 torch.cat([noisy_latents] * 3)                
-            )       # latent_model_input.shape = torch.Size([3, 4, 96, 96])
+            )
 
         # TODO: do we keep this?
         #latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
-        scaled_latent_model_input = self.scheduler.scale_model_input(latent_model_input, t) # scaled_latent_model_input.shape = torch.Size([3, 4, 96, 96])
+        scaled_latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
             
-        if control is not None:    # control.shape = torch.Size([3, 4, 96, 96])
-            # scaled_latent_model_input.shape = torch.Size([3, 4, 96, 96])
-            # control.shape = torch.Size([9, 4, 64, 64])
+        if control is not None:
             scaled_latent_model_input = torch.cat(
                     [scaled_latent_model_input, control], dim=1
                 )
@@ -326,9 +324,9 @@ class Guidance(nn.Module):
 
         return loss
     
-    def encode_image(self, image):  # image.shape = torch.Size([1, 3, 512, 512])
+    def encode_image(self, image):
         # this line only works for singular batch. for batch with multiple elements check rgb2x prepare_image_latents
-        image_latents = self.vae.encode(image).latent_dist.mode()   # image_latents.shape = torch.Size([1, 4, 64, 64])
+        image_latents = self.vae.encode(image).latent_dist.mode()
         image_latents = torch.cat([image_latents], dim=0)
         
         return image_latents

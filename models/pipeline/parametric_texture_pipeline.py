@@ -393,12 +393,12 @@ class TexturePipeline(nn.Module):
 
             latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
-            conditioning_image = self.render_conditioning_image()   #shape = torch.Size([1, 512, 512, 4])
-            conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :] # shape = torch.Size([1, 3, 512, 512])
+            conditioning_image = self.render_conditioning_image()
+            conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :]
             
-            conditioning_image = self.guidance.encode_image(conditioning_image) # shape = torch.Size([3, 4, 64, 64])
-            conditioning_image = self.prepare_conditioning_image_input(conditioning_image) # shape = torch.Size([9, 4, 64, 64])
-            conditioning_image = self.guidance.scale_conditioning_image(conditioning_image) # shape = torch.Size([9, 4, 64, 64])
+            conditioning_image = self.guidance.encode_image(conditioning_image)
+            conditioning_image = self.prepare_conditioning_image_input(conditioning_image)
+            conditioning_image = self.guidance.scale_conditioning_image(conditioning_image)
 
             # compute loss
             self.texture_optimizer.zero_grad()
