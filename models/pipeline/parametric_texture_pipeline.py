@@ -408,6 +408,7 @@ class TexturePipeline(nn.Module):
                 control=conditioning_image
             )
 
+            #TODO: current error here: RuntimeError: element 0 of tensors does not require grad and does not have a grad_fn
             sds_loss.backward()
             self.texture_optimizer.step()
             

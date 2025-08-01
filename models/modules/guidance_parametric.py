@@ -261,7 +261,7 @@ class Guidance(nn.Module):
 
         return t, noise, noisy_latents, clean_latents
     
-    def predict_noise(self, unet, noisy_latents, t, cross_attention_kwargs, guidance_scale, control=None):
+    def predict_noise(self, unet, noisy_latents, t, cross_attention_kwargs, guidance_scale, image_guidance_scale, control=None):
 
         down_block_res_samples, mid_block_res_sample = None, None
 
@@ -289,9 +289,17 @@ class Guidance(nn.Module):
             mid_block_additional_residual=mid_block_res_sample
         ).sample.to(torch.float32)
 
-        # perform guidance
-        noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-        noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
+        # perform guidance  #TODO: check if we actually do guidance here (but I guess we always do?)
+        (
+            noise_pred_text,
+            noise_pred_image,
+            noise_pred_uncond,
+        ) = noise_pred.chunk(3)
+        noise_pred = (
+            noise_pred_uncond
+            + guidance_scale * (noise_pred_text - noise_pred_image)
+            + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
+        )
 
         # TODO: rgb2x returns noise_pred = (
         # noise_pred_uncond
@@ -305,9 +313,10 @@ class Guidance(nn.Module):
             noise_pred = self.predict_noise(
                 self.unet, 
                 noisy_latents, 
-                t, 
+                t,
                 cross_attention_kwargs={},
                 guidance_scale=self.config.guidance_scale,
+                image_guidance_scale=self.config.image_guidance_scale,
                 control=control
             )
 
