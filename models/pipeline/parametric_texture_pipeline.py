@@ -359,9 +359,16 @@ class TexturePipeline(nn.Module):
             )
         )
 
-        #TODO: remove last channel (if it is alpha)
         images = renderer(self.conditioning_mesh)
         return images
+    
+    def prepare_conditioning_image_input(self, conditioning_image):
+        uncond_image_latents = torch.zeros_like(conditioning_image)
+        image_latents = torch.cat(
+            [conditioning_image, conditioning_image, uncond_image_latents], dim=0
+        )
+
+        return image_latents
 
     def fit(self):
 
@@ -385,13 +392,12 @@ class TexturePipeline(nn.Module):
 
             latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
-            conditioning_image = self.render_conditioning_image()
-            conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :]
-
-            conditioning_image = self.guidance.encode_image(conditioning_image)
-            # by default: conditioning_image.shape = torch.Size([1, 512, 512, 4])
-            # after reshaping and encoding: conditioning_image.shape = torch.Size([3, 4, 64, 64])
-            #TODO: encode conditioning image
+            conditioning_image = self.render_conditioning_image()   #shape = torch.Size([1, 512, 512, 4])
+            conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :] # shape = torch.Size([1, 3, 512, 512])
+            
+            conditioning_image = self.guidance.encode_image(conditioning_image) # shape = torch.Size([3, 4, 64, 64])
+            conditioning_image = self.prepare_conditioning_image_input(conditioning_image) # shape = torch.Size([9, 4, 64, 64])
+            conditioning_image = self.guidance.scale_conditioning_image(conditioning_image) # shape = torch.Size([9, 4, 64, 64])
 
             # compute loss
             self.texture_optimizer.zero_grad()

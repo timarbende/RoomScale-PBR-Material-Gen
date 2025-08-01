@@ -266,26 +266,24 @@ class Guidance(nn.Module):
         down_block_res_samples, mid_block_res_sample = None, None
 
         # only kept CFG branch of if-else
-        latent_model_input = torch.cat([noisy_latents] * 2)
-        latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
-            
-        if control is not None: 
-            # latent_model_input.shape = torch.Size([2, 4, 96, 96])
-            # torch.cat([control]*2).shape = torch.Size([2, 512, 512, 4])
-            # latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
-                
-            # From rbg2x: 
-            # Expand the latents if we are doing classifier free guidance.
-            # The latents are expanded 3 times because for pix2pix the guidance\
-            # is applied for both the text and the input image.
-            #latent_model_input = (
-            #    torch.cat([latents] * 3)                
-            #)
+        latent_model_input = (
+                torch.cat([noisy_latents] * 3)                
+            )       # latent_model_input.shape = torch.Size([3, 4, 96, 96])
 
-            latent_model_input = torch.cat([latent_model_input, torch.cat([control]*2)], dim=1)
+        # TODO: do we keep this?
+        #latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+
+        scaled_latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+            
+        if control is not None:    # control.shape = torch.Size([3, 4, 64, 64])             
+            # scaled_latent_model_input.shape = torch.Size([3, 4, 96, 96])
+            # control.shape = torch.Size([9, 4, 64, 64])
+            scaled_latent_model_input = torch.cat(
+                    [scaled_latent_model_input, control], dim=1
+                )
 
         noise_pred = unet(
-            latent_model_input.to(self.weights_dtype), 
+            scaled_latent_model_input.to(self.weights_dtype), 
             t, 
             encoder_hidden_states=self.text_embeddings.to(self.weights_dtype), 
             cross_attention_kwargs=cross_attention_kwargs,
@@ -328,14 +326,12 @@ class Guidance(nn.Module):
 
         return loss
     
-    def encode_image(self, image):
+    def encode_image(self, image):  # image.shape = torch.Size([1, 3, 512, 512])
         # this line only works for singular batch. for batch with multiple elements check rgb2x prepare_image_latents
-        image_latents = self.vae.encode(image).latent_dist.mode()
+        image_latents = self.vae.encode(image).latent_dist.mode()   # image_latents.shape = torch.Size([1, 4, 64, 64])
         image_latents = torch.cat([image_latents], dim=0)
-
-        uncond_image_latents = torch.zeros_like(image_latents)  # for classifier-free guidance
-        image_latents = torch.cat(
-                [image_latents, image_latents, uncond_image_latents], dim=0
-            )
         
         return image_latents
+    
+    def scale_conditioning_image(self, image):
+        return image * self.vae.config.scaling_factor
