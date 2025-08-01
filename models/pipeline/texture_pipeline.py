@@ -33,33 +33,6 @@ from pytorch3d.io import (
 from pytorch3d.renderer import TexturesUV
 from pytorch3d.ops import interpolate_face_attributes
 
-from models.pipeline.pipeline_rgb2x import StableDiffusionAOVMatEstPipeline
-from diffusers import DDIMScheduler
-from models.utils.load_image import load_ldr_image
-
-from pytorch3d.renderer import (
-    FoVPerspectiveCameras,
-    PointLights, 
-    DirectionalLights, 
-    Materials, 
-    RasterizationSettings, 
-    MeshRenderer, 
-    MeshRasterizer,  
-    SoftPhongShader,
-    TexturesUV,
-    TexturesVertex
-)
-
-from pytorch3d.io import (
-    load_obj,
-    load_objs_as_meshes
-)
-
-from pytorch3d.utils import ico_sphere
-from pytorch3d.ops import sample_points_from_meshes
-
-from mpl_toolkits.mplot3d import Axes3D
-
 # customized
 import sys
 sys.path.append("./lib")
@@ -92,7 +65,6 @@ class TexturePipeline(nn.Module):
         if not inference_mode:
             self.log_name = "_".join(self.config.prompt.split(' '))
             self.log_stamp = self.stamp
-            # TODO: add config parameter for selected AoV
             self.log_dir = os.path.join(self.config.log_dir, self.log_name, self.config.loss_type, self.log_stamp)
 
             # override config
@@ -109,13 +81,9 @@ class TexturePipeline(nn.Module):
         # instances
         self._init_anchors()
 
-        self.generator = torch.Generator(device="cpu").manual_seed(0)
-
         if not inference_mode:
             # diffusion
             self._init_guidance()
-
-            self._init_rgb2x()
 
             # optimization
             self._configure_optimizers()
@@ -132,24 +100,6 @@ class TexturePipeline(nn.Module):
     def _init_mesh(self):
         self.texture_mesh = TextureMesh(self.config, self.device)
 
-        mesh = self.texture_mesh.mesh
-
-        # if we want to get it programmatically, this is the path:
-        # os.path.join(self.config.log_dir, "texture_{}.png".format(20000))
-
-        conditioning_texture_path = os.path.join("outputs", "a_bohemian_style_living_room", "sds", "2025-06-26_16-34-01", "texture_20000.png")
-        img = Image.open(conditioning_texture_path)
-        convert_tensor = torchvision.transforms.ToTensor()
-        conditioning_texture = convert_tensor(img).permute(1, 2, 0).cuda()
-        
-        self.conditioning_mesh = mesh.clone()
-        self.conditioning_mesh.textures = TexturesUV(
-            maps=conditioning_texture[None, ...],  # B, H, W, C
-            faces_uvs= mesh.textures.faces_uvs_padded(),
-            verts_uvs= mesh.textures.verts_uvs_padded(),
-            sampling_mode="bilinear"
-        )
-
     def _init_guidance(self):
         self.guidance = Guidance(self.config, self.device)
 
@@ -164,36 +114,18 @@ class TexturePipeline(nn.Module):
 
         model_type = "controlnet" if "controlnet" in self.config.diffusion_type else "SD"
 
-        if(self.config.use_wandb):
-            wandb.login()
-            wandb.init(
-                project="SceneTex",
-                name=self.log_name+"_"+self.log_stamp+"_"+model_type,
-                dir=self.log_dir
-            )
-        else:
-            print("Not using WandB (set use_wandb to True in template.yaml to enable it)")
+        wandb.login()
+        wandb.init(
+            project="SceneTex",
+            name=self.log_name+"_"+self.log_stamp+"_"+model_type,
+            dir=self.log_dir
+        )
 
         with open(os.path.join(self.log_dir, "config.yaml"), "w") as f:
             OmegaConf.save(config=self.config, f=f)
 
         self.avg_loss_vsd = []
         self.avg_loss_phi = []
-
-    def _init_rgb2x(self):
-        pipeline = StableDiffusionAOVMatEstPipeline.from_pretrained(
-            "zheng95z/rgb-to-x",
-            torch_dtype=torch.float32,
-            cache_dir=self.config.cache_dir,
-        ).to("cpu")
-
-        pipeline.scheduler = DDIMScheduler.from_config(
-            pipeline.scheduler.config, rescale_betas_zero_snr=True, timestep_spacing="trailing"
-        )
-
-        pipeline.set_progress_bar_config(disable=True)
-
-        self.rgb2x = pipeline
 
     def _get_texture_parameters(self):
         if "hashgrid" not in self.config.texture_type:
@@ -396,32 +328,6 @@ class TexturePipeline(nn.Module):
         else:
             return 0
 
-    def render_conditioning_image(self):
-        Rs, Ts, fovs, _ = self.studio.sample_cameras(0, self.config.batch_size, self.config.use_random_cameras)
-        cameras = FoVPerspectiveCameras(R=Rs, T=Ts, device=self.device, fov=fovs)
-        raster_settings = RasterizationSettings(
-            image_size=512, 
-            blur_radius=0.0, 
-            faces_per_pixel=1, 
-        )
-
-        lights = PointLights(device=self.device, location=[[0.0, 0.0, -3.0]])
-
-        renderer = MeshRenderer(
-            rasterizer=MeshRasterizer(
-                cameras=cameras, 
-                raster_settings=raster_settings
-            ),
-            shader=SoftPhongShader(
-                device=self.device, 
-                cameras=cameras,
-                lights=lights
-            )
-        )
-
-        images = renderer(self.conditioning_mesh)
-        return images
-
     def fit(self):
         pbar = tqdm(self.guidance.chosen_ts)
 
@@ -431,10 +337,8 @@ class TexturePipeline(nn.Module):
 
             Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
             cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
-
             latents, _, _, rel_depth_normalized = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
-            conditioning_image = self.render_conditioning_image()
 
             # compute loss
             if self.config.loss_type == "sds":
@@ -443,7 +347,7 @@ class TexturePipeline(nn.Module):
 
                 sds_loss = self.guidance.compute_sds_loss(
                     latents, noisy_latents, noise, t.to(latents.dtype), 
-                    control=rel_depth_normalized
+                    control=rel_depth_normalized if "d2i" in self.config.diffusion_type else None
                 )
 
                 sds_loss.backward()
@@ -464,8 +368,8 @@ class TexturePipeline(nn.Module):
                 )
 
                 vsd_loss.backward()
-                
                 self.texture_optimizer.step()
+
 
                 # phi
                 torch.cuda.empty_cache()
@@ -495,11 +399,10 @@ class TexturePipeline(nn.Module):
             else:
                 raise ValueError("invalid loss type")
             
-            if(self.config.use_wandb):
-                wandb.log({
-                    "train/vsd_loss": vsd_loss.item(),
-                    "train/vsd_lora_loss": vsd_phi_loss.item()
-                })
+            wandb.log({
+                "train/vsd_loss": vsd_loss.item(),
+                "train/vsd_lora_loss": vsd_phi_loss.item()
+            })
             
             self.avg_loss_vsd.append(vsd_loss.item())
             self.avg_loss_phi.append(vsd_phi_loss.item())
@@ -564,22 +467,20 @@ class TexturePipeline(nn.Module):
                         clip_score = self._benchmark_step(latents_image, self.config.prompt)
                         clip_scores.append(clip_score)
 
-                        if(self.config.use_wandb):
-                            wandb_renderings.append(wandb.Image(latents_image))
+                        wandb_renderings.append(wandb.Image(latents_image))
 
-                            # depth
-                            depth_image = Image.fromarray(rel_depth[0].cpu().numpy().astype(np.uint8)).convert("L").resize((self.config.decode_size, self.config.decode_size))
-                            wandb_depths.append(wandb.Image(depth_image))
+                        # depth
+                        depth_image = Image.fromarray(rel_depth[0].cpu().numpy().astype(np.uint8)).convert("L").resize((self.config.decode_size, self.config.decode_size))
+                        wandb_depths.append(wandb.Image(depth_image))
 
-                    if(self.config.use_wandb):
-                        wandb_images += wandb_renderings
-                        wandb_images_depths += wandb_depths
+                    wandb_images += wandb_renderings
+                    wandb_images_depths += wandb_depths
 
-                if(self.config.use_wandb):
-                    wandb.log({
-                        "images": wandb_images,
-                        "depths": wandb_images_depths,
-                        "train/avg_loss": np.mean(self.avg_loss_vsd),
-                        "train/avg_loss_lora": np.mean(self.avg_loss_phi),
-                        "train/clip_score": np.mean(clip_scores)
-                    })
+                wandb.log({
+                    "images": wandb_images,
+                    "depths": wandb_images_depths,
+                    "train/avg_loss": np.mean(self.avg_loss_vsd),
+                    "train/avg_loss_lora": np.mean(self.avg_loss_phi),
+                    "train/clip_score": np.mean(clip_scores)
+                })
+        
