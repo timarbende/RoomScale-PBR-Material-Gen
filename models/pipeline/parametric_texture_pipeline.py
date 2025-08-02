@@ -444,7 +444,6 @@ class TexturePipeline(nn.Module):
 
                 # visualize
                 wandb_images = []
-                wandb_images_depths = []
                 clip_scores = []
 
                 if self.config.show_original_texture:
@@ -467,11 +466,11 @@ class TexturePipeline(nn.Module):
 
                         if self.config.texture_type == "latent":
                             with torch.no_grad():
-                                latents, _, rel_depth, _ = self.forward(cameras, False, True, is_direct=("hashgrid" not in self.config.texture_type))
+                                latents = self.forward(cameras, False, True, is_direct=("hashgrid" not in self.config.texture_type))
                                 latents = self.guidance.decode_latent_texture(latents)
                         else:
                             with torch.no_grad():
-                                latents, _, rel_depth, _ = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
+                                latents = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
                                 latents = (latents / 2 + 0.5).clamp(0, 1)
                         
                         latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))
@@ -482,18 +481,12 @@ class TexturePipeline(nn.Module):
                         if(self.config.use_wandb):
                             wandb_renderings.append(wandb.Image(latents_image))
 
-                            # depth
-                            depth_image = Image.fromarray(rel_depth[0].cpu().numpy().astype(np.uint8)).convert("L").resize((self.config.decode_size, self.config.decode_size))
-                            wandb_depths.append(wandb.Image(depth_image))
-
                     if(self.config.use_wandb):
                         wandb_images += wandb_renderings
-                        wandb_images_depths += wandb_depths
 
                 if(self.config.use_wandb):
                     wandb.log({
                         "images": wandb_images,
-                        "depths": wandb_images_depths,
                         "train/avg_loss": np.mean(self.avg_loss_vsd),
                         "train/avg_loss_lora": np.mean(self.avg_loss_phi),
                         "train/clip_score": np.mean(clip_scores)
