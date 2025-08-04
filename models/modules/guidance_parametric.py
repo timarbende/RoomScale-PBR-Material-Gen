@@ -148,7 +148,7 @@ class Guidance(nn.Module):
     def init_text_embeddings(self, batch_size):
         ### get text embedding
         text_inputs = self.tokenizer(
-            [self.prompt], 
+            self.prompt, 
             padding="max_length", 
             max_length=self.tokenizer.model_max_length, 
             truncation=True, 
@@ -163,32 +163,58 @@ class Guidance(nn.Module):
             attention_mask = text_inputs.attention_mask.to(self.device)
         else:
             attention_mask = None
+        #TODO: add attention mask?
 
-        """         
         with torch.no_grad():
-            prompt_embeds = self.text_encoder(
+            text_embeddings = self.text_encoder(
                 text_input_ids,
-                attention_mask=attention_mask,
-            )
-            prompt_embeds = prompt_embeds[0] 
-        """
+                attention_mask = attention_mask
+            )[0]
 
-        with torch.no_grad():
-            text_embeddings = self.text_encoder(text_input_ids)[0].repeat(batch_size, 1, 1)
+        text_embeddings = text_embeddings.to(dtype=self.text_encoder.dtype, device=self.device)
+
+        ''' TODO: do we need this?
+        bs_embed, seq_len, _ = prompt_embeds.shape
+        prompt_embeds = prompt_embeds.view(
+            bs_embed * num_images_per_prompt, seq_len, -1
+        )
+        '''
 
         max_length = text_input_ids.shape[-1]
         uncond_input = self.tokenizer(
             [self.n_prompt], 
             padding="max_length", 
-            max_length=max_length, 
+            max_length=max_length,
+            truncation=True,
             return_tensors="pt"
-        ).input_ids.to(self.device)
+        )
+
+        if (
+            hasattr(self.text_encoder.config, "use_attention_mask")
+            and self.text_encoder.config.use_attention_mask
+            ):
+            attention_mask = uncond_input.attention_mask.to(self.device)
+        else:
+            attention_mask = None
 
         with torch.no_grad():
-            uncond_embeddings = self.text_encoder(uncond_input)[0].repeat(batch_size, 1, 1)
+            uncond_embeddings = self.text_encoder(
+                uncond_input.input_ids.to(self.device),
+                attention_mask=attention_mask
+            )
 
-        # pix2pix has two  negative embeddings, and unlike in other pipelines latents are ordered [prompt_embeds, negative_prompt_embeds, negative_prompt_embeds]
-        # new: self.text_embeddings = torch.cat([text_embeddings, uncond_embeddings, uncond_embeddings])
+        uncond_embeddings = uncond_embeddings[0].to(
+                dtype=self.text_encoder.dtype, device=self.device
+            )
+        
+        '''TODO: do we need this?
+        negative_prompt_embeds = negative_prompt_embeds.repeat(
+                1, num_images_per_prompt, 1
+            )
+            negative_prompt_embeds = negative_prompt_embeds.view(
+                batch_size * num_images_per_prompt, seq_len, -1
+            )
+        '''
 
         self.text_embeddings = torch.cat([text_embeddings, uncond_embeddings, uncond_embeddings])
 

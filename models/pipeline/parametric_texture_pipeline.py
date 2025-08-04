@@ -110,8 +110,6 @@ class TexturePipeline(nn.Module):
         # instances
         self._init_anchors()
 
-        self.generator = torch.Generator(device="cpu").manual_seed(0)
-
         self._init_guidance()
 
         # optimization
@@ -382,6 +380,9 @@ class TexturePipeline(nn.Module):
         # 7.: prepare extra step kwargs: add eta generator for DDIM
         # 8.: denoise
 
+        # rgb2x normalizes the image to [-1, 1]
+        # rgb2x scales image latents (conditioning image) with vae.config.scaling_factor
+
         pbar = tqdm(self.guidance.chosen_ts)
 
         self.guidance.init_text_embeddings(self.config.batch_size)
@@ -408,7 +409,6 @@ class TexturePipeline(nn.Module):
                 control=conditioning_image
             )
 
-            #TODO: current error here: RuntimeError: element 0 of tensors does not require grad and does not have a grad_fn
             sds_loss.backward()
             self.texture_optimizer.step()
             
@@ -487,7 +487,6 @@ class TexturePipeline(nn.Module):
                 if(self.config.use_wandb):
                     wandb.log({
                         "images": wandb_images,
-                        "train/avg_loss": np.mean(self.avg_loss_vsd),
-                        "train/avg_loss_lora": np.mean(self.avg_loss_phi),
+                        "train/avg_loss": np.mean(self.avg_loss_sds),
                         "train/clip_score": np.mean(clip_scores)
                     })
