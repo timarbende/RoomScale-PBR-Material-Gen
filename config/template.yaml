@@ -1,10 +1,10 @@
 # VSD guidance
-guidance_scale: 10.0
+guidance_scale: 100.0
 guidance_scale_phi: 1.0
-image_guidance_scale: 10.0
+image_guidance_scale: 100.0
 phi_scale: 1.0
 grad_scale: 1.0
-latent_lr: 1e-3
+latent_lr: 1e-1
 latent_wd: 0
 phi_lr: 1e-4
 latent_encoder_lr: 3e-2
@@ -85,7 +85,7 @@ use_latent_embeddings: False
 
 # studio
 texture_type: rgb # latent / rgb / hashgrid / hashgrid_mlp DEFAULT: hashgrid
-render_func_type: mlp # mlp / none DEFAULT: mlp
+render_func_type: none # mlp / none DEFAULT: mlp
 
 add_view_directions: False
 add_target_positions: True
@@ -112,7 +112,7 @@ mlp_config:
   out_channels: 3
 
 # instance styles
-enable_anchor_embedding: True # Default: True
+enable_anchor_embedding: False # Default: True # anchor embedding is not compatible with none rendering_func (and rgb texture_type)
 num_anchors: 4096
 detach_anchors: False
 

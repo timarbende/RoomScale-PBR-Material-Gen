@@ -163,7 +163,7 @@ class Guidance(nn.Module):
             attention_mask = text_inputs.attention_mask.to(self.device)
         else:
             attention_mask = None
-        #TODO: add attention mask?
+        #TODO: add attention mask? No
 
         with torch.no_grad():
             text_embeddings = self.text_encoder(
@@ -173,7 +173,7 @@ class Guidance(nn.Module):
 
         text_embeddings = text_embeddings.to(dtype=self.text_encoder.dtype, device=self.device)
 
-        ''' TODO: do we need this?
+        ''' TODO: do we need this? no
         bs_embed, seq_len, _ = prompt_embeds.shape
         prompt_embeds = prompt_embeds.view(
             bs_embed * num_images_per_prompt, seq_len, -1
@@ -207,7 +207,7 @@ class Guidance(nn.Module):
                 dtype=self.text_encoder.dtype, device=self.device
             )
         
-        '''TODO: do we need this?
+        '''TODO: do we need this? no
         negative_prompt_embeds = negative_prompt_embeds.repeat(
                 1, num_images_per_prompt, 1
             )
@@ -296,9 +296,6 @@ class Guidance(nn.Module):
                 torch.cat([noisy_latents] * 3)                
             )
 
-        # TODO: do we keep this?
-        #latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
-
         scaled_latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
             
         if control is not None:
@@ -327,11 +324,14 @@ class Guidance(nn.Module):
             + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
         )
 
-        # TODO: rgb2x returns noise_pred = (
-        # noise_pred_uncond
-        # + guidance_scale * (noise_pred_text - noise_pred_image)
-        # + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
-        # )
+        '''TODO: do we need this? not yet
+        if do_classifier_free_guidance and guidance_rescale > 0.0:
+                    # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
+                    noise_pred = rescale_noise_cfg(
+                        noise_pred, noise_pred_text, guidance_rescale=guidance_rescale
+                    )
+        '''
+
         return noise_pred
 
     def compute_sds_loss(self, latents, noisy_latents, noise, t, control=None):

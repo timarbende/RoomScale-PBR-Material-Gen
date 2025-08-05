@@ -335,6 +335,7 @@ class TexturePipeline(nn.Module):
             return 0
 
     def render_conditioning_image(self):
+        #TODO: incrementally increase to step camera size (first modulo 10)
         Rs, Ts, fovs, _ = self.studio.sample_cameras(0, self.config.batch_size, self.config.use_random_cameras)
         cameras = FoVPerspectiveCameras(R=Rs, T=Ts, device=self.device, fov=fovs)
         raster_settings = RasterizationSettings(
@@ -343,7 +344,11 @@ class TexturePipeline(nn.Module):
             faces_per_pixel=1, 
         )
 
+        #TODO: maybe the lights are the problem?
+        # or maybe I shouldn't be using SoftPhongShader?
         lights = PointLights(device=self.device, location=[[0.0, 0.0, -3.0]])
+
+        # switch to scenetex renderer
 
         renderer = MeshRenderer(
             rasterizer=MeshRasterizer(
@@ -360,6 +365,7 @@ class TexturePipeline(nn.Module):
         images = renderer(self.conditioning_mesh)
         return images
     
+    # prepare for classifier-free guidance
     def prepare_conditioning_image_input(self, conditioning_image):
         uncond_image_latents = torch.zeros_like(conditioning_image)
         image_latents = torch.cat(
@@ -394,7 +400,10 @@ class TexturePipeline(nn.Module):
 
             latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
-            conditioning_image = self.render_conditioning_image()
+            #TODO: in rgb2x: latents = latents * self.scheduler.init_noise_sigma yes
+
+            conditioning_image = self.render_conditioning_image().to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
+            # TODO: # Normalize image to [-1,1]
             conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :]
             
             conditioning_image = self.guidance.encode_image(conditioning_image)
@@ -490,3 +499,5 @@ class TexturePipeline(nn.Module):
                         "train/avg_loss": np.mean(self.avg_loss_sds),
                         "train/clip_score": np.mean(clip_scores)
                     })
+
+# TODO: also log conditioning image

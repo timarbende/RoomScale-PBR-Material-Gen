@@ -10,6 +10,9 @@ from omegaconf import OmegaConf
 from pathlib import Path
 from datetime import datetime
 
+import lovely_tensors as lt
+lt.monkey_patch()
+
 import sys
 sys.path.append(".")
 from models.pipeline.parametric_texture_pipeline import TexturePipeline
