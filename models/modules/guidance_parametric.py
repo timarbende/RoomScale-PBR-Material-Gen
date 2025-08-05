@@ -1,18 +1,10 @@
-import os
-import time
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import pytorch_lightning as pl
-
 import numpy as np
 
-import torchvision
-
-from PIL import Image
-from diffusers import DDIMScheduler, StableDiffusionDepth2ImgPipeline
+from diffusers import DDIMScheduler
 from models.pipeline.pipeline_rgb2x import StableDiffusionAOVMatEstPipeline
 
 # customized
@@ -51,8 +43,6 @@ class Guidance(nn.Module):
         self._init_t_schedule()
 
     def _init_backbone(self):
-        #TODO: remove original diffusion model (only rgb2x)
-        diffusion_model = StableDiffusionDepth2ImgPipeline.from_pretrained("stabilityai/stable-diffusion-2-depth").to(self.device)
         mat_est_pipe = StableDiffusionAOVMatEstPipeline.from_pretrained(
             "zheng95z/rgb-to-x",
             torch_dtype=torch.float32,
@@ -61,12 +51,12 @@ class Guidance(nn.Module):
 
         if self.config.enable_memory_efficient_attention:
             print("=> Enable memory efficient attention.")
-            diffusion_model.enable_xformers_memory_efficient_attention()
+            mat_est_pipe.enable_xformers_memory_efficient_attention()
 
         # pretrained diffusion model
-        self.tokenizer = diffusion_model.tokenizer
-        self.text_encoder = diffusion_model.text_encoder
-        self.vae = diffusion_model.vae
+        self.tokenizer = mat_est_pipe.tokenizer
+        self.text_encoder = mat_est_pipe.text_encoder
+        self.vae = mat_est_pipe.vae
         self.unet = mat_est_pipe.unet.to(self.weights_dtype)
 
         self.text_encoder.requires_grad_(False)
@@ -75,7 +65,7 @@ class Guidance(nn.Module):
 
         # use DDIMScheduler by default
         #TODO: use rgb2x scheduler (just in case)
-        self.scheduler = DDIMScheduler.from_pretrained("stabilityai/stable-diffusion-2-depth", subfolder="scheduler")
+        self.scheduler = mat_est_pipe.scheduler
         self.scheduler.betas = self.scheduler.betas.to(self.device)
         self.scheduler.alphas = self.scheduler.alphas.to(self.device)
         self.scheduler.alphas_cumprod = self.scheduler.alphas_cumprod.to(self.device)
