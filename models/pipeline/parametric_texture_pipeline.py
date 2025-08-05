@@ -333,10 +333,21 @@ class TexturePipeline(nn.Module):
         else:
             return 0
 
-    def render_conditioning_image(self, cameras):
+    def render_conditioning_image(self, step):
+        #renderer = self.studio.set_renderer(cameras, self.config.render_size)
+
+        #step = step % 10
+        step = 0
+        Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
+        cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
         renderer = self.studio.set_renderer(cameras, self.config.render_size)
-        images = renderer(self.conditioning_mesh)
+
+        images, fragments = renderer(self.conditioning_mesh)
         return images
+
+    # normalizes image to [-1, 1]
+    def normalize_image(self, image):
+        return image * 2 - 1
     
     # prepare for classifier-free guidance
     def prepare_conditioning_image_input(self, conditioning_image):
@@ -375,8 +386,8 @@ class TexturePipeline(nn.Module):
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
             #TODO: in rgb2x: latents = latents * self.scheduler.init_noise_sigma yes
 
-            conditioning_image = self.render_conditioning_image(cameras).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
-            # TODO: # Normalize image to [-1,1]
+            conditioning_image = self.render_conditioning_image(step).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
+            conditioning_image = self.normalize_image(conditioning_image)
             conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :]
             
             conditioning_image = self.guidance.encode_image(conditioning_image)

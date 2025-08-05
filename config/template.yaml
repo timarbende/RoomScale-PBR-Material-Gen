@@ -144,7 +144,7 @@ blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
 blender_cameras: ${scene_dir}/${scene_id}/cameras/blender.json
 
 # wandb
-use_wandb: True
+use_wandb: False
 
 #rgb2x
 cache_dir: models/rgb2x_cache
