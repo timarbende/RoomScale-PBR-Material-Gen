@@ -338,7 +338,7 @@ class TexturePipeline(nn.Module):
 
         #step = step % 10
         step = 0
-        Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
+        Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, False)
         cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
         renderer = self.studio.set_renderer(cameras, self.config.render_size)
 
@@ -384,7 +384,7 @@ class TexturePipeline(nn.Module):
 
             latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
-            #TODO: in rgb2x: latents = latents * self.scheduler.init_noise_sigma yes
+            # TODO: latents = latents * self.scheduler.init_noise_sigma yes
 
             conditioning_image = self.render_conditioning_image(step).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
             conditioning_image = self.normalize_image(conditioning_image)
@@ -436,7 +436,8 @@ class TexturePipeline(nn.Module):
                 )
 
                 # visualize
-                wandb_images = []
+                wandb_latent_images = []
+                wandb_conditioning_images = []
                 clip_scores = []
 
                 if self.config.show_original_texture:
@@ -451,8 +452,8 @@ class TexturePipeline(nn.Module):
                     else:
                         self.inference(self.config.log_dir, step, self.config.texture_size)
 
-                if self.config.show_decoded_latents:
-                    wandb_renderings, wandb_depths = [], []
+                if self.config.show_decoded_latents:# and self.config.use_wandb:
+                    wandb_latent_renderings, wandb_conditioning_renderings = [], []
                     for view_id in range(self.config.log_latents_views):
                         Rs, Ts, fovs, _ = self.studio.sample_cameras(view_id, 1, inference=True)
                         cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
@@ -471,15 +472,23 @@ class TexturePipeline(nn.Module):
                         clip_score = self._benchmark_step(latents_image, self.config.prompt)
                         clip_scores.append(clip_score)
 
-                        if(self.config.use_wandb):
-                            wandb_renderings.append(wandb.Image(latents_image))
+                        wandb_latent_renderings.append(wandb.Image(latents_image))
 
-                    if(self.config.use_wandb):
-                        wandb_images += wandb_renderings
+                        if self.config.show_conditioning_image:
+                            conditioning_image_log = self.render_conditioning_image(view_id).permute(0, 3, 1, 2)
+                            conditioning_image_log = torchvision.transforms.ToPILImage()(conditioning_image_log[0])
+                            conditioning_image_log = conditioning_image_log.convert("RGB")
+                            conditioning_image_log = conditioning_image_log.resize((self.config.decode_size, self.config.decode_size))
+                            wandb_conditioning_renderings.append(wandb.Image(conditioning_image_log))
 
+                    wandb_latent_images += wandb_latent_renderings
+                    wandb_conditioning_images += wandb_conditioning_renderings
+
+                
                 if(self.config.use_wandb):
                     wandb.log({
-                        "images": wandb_images,
+                        "optimized texture": wandb_latent_images,
+                        "conditioning image": wandb_conditioning_images,
                         "train/avg_loss": np.mean(self.avg_loss_sds),
                         "train/clip_score": np.mean(clip_scores)
                     })

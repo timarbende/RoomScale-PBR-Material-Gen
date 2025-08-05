@@ -32,6 +32,7 @@ load_lora_weights: ""
 # logging
 show_decoded_latents: True
 show_original_texture: True
+show_conditioning_image: True
 show_visible_texels: False
 show_rgb_gt: False
 
@@ -144,7 +145,7 @@ blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
 blender_cameras: ${scene_dir}/${scene_id}/cameras/blender.json
 
 # wandb
-use_wandb: False
+use_wandb: True
 
 #rgb2x
 cache_dir: models/rgb2x_cache
