@@ -93,7 +93,6 @@ class TexturePipeline(nn.Module):
         if not inference_mode:
             self.log_name = "_".join(self.config.prompt.split(' '))
             self.log_stamp = self.stamp
-            # TODO: add config parameter for selected AoV
             self.log_dir = os.path.join(self.config.log_dir, self.log_name, self.config.loss_type, self.log_stamp)
 
             # override config
@@ -334,34 +333,8 @@ class TexturePipeline(nn.Module):
         else:
             return 0
 
-    def render_conditioning_image(self):
-        #TODO: incrementally increase to step camera size (first modulo 10)
-        Rs, Ts, fovs, _ = self.studio.sample_cameras(0, self.config.batch_size, self.config.use_random_cameras)
-        cameras = FoVPerspectiveCameras(R=Rs, T=Ts, device=self.device, fov=fovs)
-        raster_settings = RasterizationSettings(
-            image_size=self.config.render_size, 
-            blur_radius=0.0, 
-            faces_per_pixel=1, 
-        )
-
-        #TODO: maybe the lights are the problem?
-        # or maybe I shouldn't be using SoftPhongShader?
-        lights = PointLights(device=self.device, location=[[0.0, 0.0, -3.0]])
-
-        # switch to scenetex renderer
-
-        renderer = MeshRenderer(
-            rasterizer=MeshRasterizer(
-                cameras=cameras, 
-                raster_settings=raster_settings
-            ),
-            shader=SoftPhongShader(
-                device=self.device, 
-                cameras=cameras,
-                lights=lights
-            )
-        )
-
+    def render_conditioning_image(self, cameras):
+        renderer = self.studio.set_renderer(cameras, self.config.render_size)
         images = renderer(self.conditioning_mesh)
         return images
     
@@ -402,7 +375,7 @@ class TexturePipeline(nn.Module):
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
             #TODO: in rgb2x: latents = latents * self.scheduler.init_noise_sigma yes
 
-            conditioning_image = self.render_conditioning_image().to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
+            conditioning_image = self.render_conditioning_image(cameras).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
             # TODO: # Normalize image to [-1,1]
             conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :]
             

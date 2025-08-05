@@ -63,8 +63,6 @@ class Guidance(nn.Module):
         self.vae.requires_grad_(False)
         self.unet.requires_grad_(False)
 
-        # use DDIMScheduler by default
-        #TODO: use rgb2x scheduler (just in case)
         self.scheduler = mat_est_pipe.scheduler
         self.scheduler.betas = self.scheduler.betas.to(self.device)
         self.scheduler.alphas = self.scheduler.alphas.to(self.device)
@@ -147,28 +145,10 @@ class Guidance(nn.Module):
         text_input_ids = text_inputs.input_ids.to(self.device)
         self._check_for_removed_text(text_input_ids)
 
-        if (hasattr(self.text_encoder.config, "use_attention_mask")
-            and self.text_encoder.config.use_attention_mask
-        ):
-            attention_mask = text_inputs.attention_mask.to(self.device)
-        else:
-            attention_mask = None
-        #TODO: add attention mask? No
-
         with torch.no_grad():
-            text_embeddings = self.text_encoder(
-                text_input_ids,
-                attention_mask = attention_mask
-            )[0]
+            text_embeddings = self.text_encoder(text_input_ids)[0]
 
         text_embeddings = text_embeddings.to(dtype=self.text_encoder.dtype, device=self.device)
-
-        ''' TODO: do we need this? no
-        bs_embed, seq_len, _ = prompt_embeds.shape
-        prompt_embeds = prompt_embeds.view(
-            bs_embed * num_images_per_prompt, seq_len, -1
-        )
-        '''
 
         max_length = text_input_ids.shape[-1]
         uncond_input = self.tokenizer(
@@ -179,32 +159,12 @@ class Guidance(nn.Module):
             return_tensors="pt"
         )
 
-        if (
-            hasattr(self.text_encoder.config, "use_attention_mask")
-            and self.text_encoder.config.use_attention_mask
-            ):
-            attention_mask = uncond_input.attention_mask.to(self.device)
-        else:
-            attention_mask = None
-
         with torch.no_grad():
-            uncond_embeddings = self.text_encoder(
-                uncond_input.input_ids.to(self.device),
-                attention_mask=attention_mask
-            )
+            uncond_embeddings = self.text_encoder(uncond_input.input_ids.to(self.device))
 
         uncond_embeddings = uncond_embeddings[0].to(
                 dtype=self.text_encoder.dtype, device=self.device
             )
-        
-        '''TODO: do we need this? no
-        negative_prompt_embeds = negative_prompt_embeds.repeat(
-                1, num_images_per_prompt, 1
-            )
-            negative_prompt_embeds = negative_prompt_embeds.view(
-                batch_size * num_images_per_prompt, seq_len, -1
-            )
-        '''
 
         self.text_embeddings = torch.cat([text_embeddings, uncond_embeddings, uncond_embeddings])
 
