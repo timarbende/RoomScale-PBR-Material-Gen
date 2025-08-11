@@ -86,7 +86,7 @@ use_latent_embeddings: False
 
 # studio
 texture_type: rgb # latent / rgb / hashgrid / hashgrid_mlp DEFAULT: hashgrid
-s # mlp / none DEFAULT: mlp
+render_func_type: none # mlp / none DEFAULT: mlp
 
 add_view_directions: False
 add_target_positions: True
