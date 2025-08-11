@@ -432,10 +432,6 @@ class TexturePipeline(nn.Module):
                 )
 
                 # visualize
-                wandb_latent_images = []
-                wandb_conditioning_images = []
-                clip_scores = []
-
                 if self.config.show_original_texture:
                     if self.config.texture_type == "latent":
                         decoded_texture = self.guidance.decode_latent_texture(self.texture_mesh.texture.permute(0, 3, 1, 2))
@@ -448,46 +444,48 @@ class TexturePipeline(nn.Module):
                     else:
                         self.inference(self.config.log_dir, step, self.config.texture_size)
 
-                if self.config.show_decoded_latents:# and self.config.use_wandb:
-                    wandb_latent_renderings, wandb_conditioning_renderings = [], []
-                    for view_id in range(self.config.log_latents_views):
+                if self.config.show_decoded_latents and self.config.use_wandb:
+                    #for view_id in range(self.config.log_latents_views):
                         #Rs, Ts, fovs, _ = self.studio.sample_cameras(view_id, 1, inference=True)
                         #cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
-                        if self.config.texture_type == "latent":
+                    if self.config.texture_type == "latent":
                             with torch.no_grad():
                                 latents = self.forward(cameras, False, True, is_direct=("hashgrid" not in self.config.texture_type))
                                 latents = self.guidance.decode_latent_texture(latents)
-                        else:
-                            with torch.no_grad():
-                                latents = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
-                                latents = (latents / 2 + 0.5).clamp(0, 1)
+                    else:
+                        with torch.no_grad():
+                            latents = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
+                            latents = (latents / 2 + 0.5).clamp(0, 1)
                         
-                        latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))
+                    latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))
 
-                        clip_score = self._benchmark_step(latents_image, self.config.prompt)
-                        clip_scores.append(clip_score)
+                    clip_score = self._benchmark_step(latents_image, self.config.prompt)
 
-                        wandb_latent_renderings.append(wandb.Image(latents_image))
+                    wandb_latent_rendering = wandb.Image(latents_image)
 
-                        if self.config.show_conditioning_image:
-                            conditioning_image_log = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
-                            conditioning_image_log = torchvision.transforms.ToPILImage()(conditioning_image_log[0])
-                            conditioning_image_log = conditioning_image_log.convert("RGB")
-                            conditioning_image_log = conditioning_image_log.resize((self.config.decode_size, self.config.decode_size))
-                            wandb_conditioning_renderings.append(wandb.Image(conditioning_image_log))
-
-                    wandb_latent_images += wandb_latent_renderings
-                    wandb_conditioning_images += wandb_conditioning_renderings
+                    if self.config.show_conditioning_image:
+                        conditioning_image_log = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
+                        conditioning_image_log = torchvision.transforms.ToPILImage()(conditioning_image_log[0])
+                        conditioning_image_log = conditioning_image_log.convert("RGB")
+                        conditioning_image_log = conditioning_image_log.resize((self.config.decode_size, self.config.decode_size))
+                        wandb_conditioning_rendering = wandb.Image(conditioning_image_log)
+                        wandb.log(
+                            {
+                                "conditioning image": wandb_conditioning_rendering,
+                            },
+                            step=step
+                        )
 
                 
-                if(self.config.use_wandb):
-                    wandb.log({
-                        "optimized texture": wandb_latent_images,
-                        "conditioning image": wandb_conditioning_images,
-                        "train/avg_loss": np.mean(self.avg_loss_sds),
-                        "train/clip_score": np.mean(clip_scores)
-                    })
+                    wandb.log(
+                        {
+                            "optimized texture": wandb_latent_rendering,
+                            "train/avg_loss": np.mean(self.avg_loss_sds),
+                            "train/clip_score": clip_score
+                        },
+                        step=step
+                    )
 
     # helper function to check all camera views
     def render_all_views(self):
