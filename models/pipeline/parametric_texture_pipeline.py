@@ -333,13 +333,7 @@ class TexturePipeline(nn.Module):
         else:
             return 0
 
-    def render_conditioning_image(self, step):
-        #renderer = self.studio.set_renderer(cameras, self.config.render_size)
-
-        #step = step % 10
-        step = 0
-        Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, False)
-        cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
+    def render_conditioning_image(self, cameras):
         renderer = self.studio.set_renderer(cameras, self.config.render_size)
 
         images, fragments = renderer(self.conditioning_mesh)
@@ -379,14 +373,16 @@ class TexturePipeline(nn.Module):
 
         for step, chosen_t in enumerate(pbar):
 
-            Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
+            #Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
+            # hardcoded camera 279
+            Rs, Ts, fovs, ids = self.studio.sample_cameras(279, self.config.batch_size, random_cameras=False)            
             cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
             latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
             # TODO: latents = latents * self.scheduler.init_noise_sigma yes
 
-            conditioning_image = self.render_conditioning_image(step).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
+            conditioning_image = self.render_conditioning_image(cameras).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
             conditioning_image = self.normalize_image(conditioning_image)
             conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :]
             
@@ -455,8 +451,8 @@ class TexturePipeline(nn.Module):
                 if self.config.show_decoded_latents:# and self.config.use_wandb:
                     wandb_latent_renderings, wandb_conditioning_renderings = [], []
                     for view_id in range(self.config.log_latents_views):
-                        Rs, Ts, fovs, _ = self.studio.sample_cameras(view_id, 1, inference=True)
-                        cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
+                        #Rs, Ts, fovs, _ = self.studio.sample_cameras(view_id, 1, inference=True)
+                        #cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
                         if self.config.texture_type == "latent":
                             with torch.no_grad():
@@ -475,7 +471,7 @@ class TexturePipeline(nn.Module):
                         wandb_latent_renderings.append(wandb.Image(latents_image))
 
                         if self.config.show_conditioning_image:
-                            conditioning_image_log = self.render_conditioning_image(view_id).permute(0, 3, 1, 2)
+                            conditioning_image_log = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
                             conditioning_image_log = torchvision.transforms.ToPILImage()(conditioning_image_log[0])
                             conditioning_image_log = conditioning_image_log.convert("RGB")
                             conditioning_image_log = conditioning_image_log.resize((self.config.decode_size, self.config.decode_size))
@@ -493,4 +489,14 @@ class TexturePipeline(nn.Module):
                         "train/clip_score": np.mean(clip_scores)
                     })
 
-# TODO: also log conditioning image
+    # helper function to check all camera views
+    def render_all_views(self):
+        cameras_count = 5000
+        
+        for camera_id in range(cameras_count):
+            Rs, Ts, fovs, ids = self.studio.sample_cameras(camera_id, self.config.batch_size, random_cameras=False)            
+            cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
+
+            conditioning_image = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
+            conditioning_image = torchvision.transforms.ToPILImage()(conditioning_image[0])
+            conditioning_image.save("camera_{}.png".format(camera_id))

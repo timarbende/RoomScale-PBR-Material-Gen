@@ -1,7 +1,7 @@
 # VSD guidance
-guidance_scale: 100.0
+guidance_scale: 10.0
 guidance_scale_phi: 1.0
-image_guidance_scale: 100.0
+image_guidance_scale: 10.0
 phi_scale: 1.0
 grad_scale: 1.0
 latent_lr: 1e-1
@@ -86,7 +86,7 @@ use_latent_embeddings: False
 
 # studio
 texture_type: rgb # latent / rgb / hashgrid / hashgrid_mlp DEFAULT: hashgrid
-render_func_type: none # mlp / none DEFAULT: mlp
+s # mlp / none DEFAULT: mlp
 
 add_view_directions: False
 add_target_positions: True
