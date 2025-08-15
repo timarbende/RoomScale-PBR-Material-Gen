@@ -304,7 +304,8 @@ class TexturePipeline(nn.Module):
         anchors = self.texture_mesh.instance_anchors if self.config.enable_anchor_embedding else None
 
         # for VSD -> 512x512
-        # this is to get more texels involved
+        # this is to get more texels involved 
+        # latent = z0
         latents, _, _ = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
         latents = latents.permute(0, 3, 1, 2)
 
@@ -316,6 +317,8 @@ class TexturePipeline(nn.Module):
             else:
                 raise ValueError("invalid downsampling mode.")
 
+        # here (after encoding) latent x_initial
+        #TODO: return also latent before encoding (z0)
         return latents
 
     @torch.no_grad()
@@ -474,7 +477,6 @@ class TexturePipeline(nn.Module):
                             {
                                 "conditioning image": wandb_conditioning_rendering,
                             },
-                            step=step
                         )
 
                 
@@ -484,7 +486,6 @@ class TexturePipeline(nn.Module):
                             "train/avg_loss": np.mean(self.avg_loss_sds),
                             "train/clip_score": clip_score
                         },
-                        step=step
                     )
 
     # helper function to check all camera views

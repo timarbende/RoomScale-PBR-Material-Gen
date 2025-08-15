@@ -296,6 +296,10 @@ class Guidance(nn.Module):
                 control=control
             )
 
+        # TODO get x0 (completely denoised image: schedulerből a pred_original_sample)
+        # x0 = decode(ddim_scale(noisy_latent - noise_pred)), de ezt megkaphatjuk a pred_original_sample-l
+        # TODO: image-space loss: grad = z0 - x0
+
         grad = self.config.grad_scale * (noise_pred - noise)
         grad = torch.nan_to_num(grad)
 
