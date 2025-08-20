@@ -1,7 +1,7 @@
 # VSD guidance
-guidance_scale: 50.0
+guidance_scale: 10.0
 guidance_scale_phi: 1.0
-image_guidance_scale: 10.0
+image_guidance_scale: 50.0
 phi_scale: 1.0
 grad_scale: 1.0
 latent_lr: 1e-1
@@ -38,6 +38,7 @@ show_rgb_gt: False
 
 phi_type: lora # lora / simple_unet
 loss_type: sds # vsd / sds / l2
+loss_space: image # image / latent
 diffusion_type: d2i # t2i / d2i / d2i_controlnet
 generation_mode: vsd # t2i / vsd 
 t_schedule: anneal # random / t_stages2 / anneal -> need to set num_anneal_steps
@@ -146,6 +147,7 @@ blender_cameras: ${scene_dir}/${scene_id}/cameras/blender.json
 
 # wandb
 use_wandb: True
+wandb_log_hyperparameters: True
 
 #rgb2x
 cache_dir: models/rgb2x_cache

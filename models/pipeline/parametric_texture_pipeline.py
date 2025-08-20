@@ -100,6 +100,8 @@ class TexturePipeline(nn.Module):
             self.config.log_stamp = self.log_stamp
             self.config.log_dir = self.log_dir
 
+            print("Using {}-space loss".format(self.config.loss_space))
+
         # 3D assets
         self._init_mesh()
 
@@ -170,6 +172,15 @@ class TexturePipeline(nn.Module):
 
         with open(os.path.join(self.log_dir, "config.yaml"), "w") as f:
             OmegaConf.save(config=self.config, f=f)
+
+        if(self.config.use_wandb and self.config.wandb_log_hyperparameters):
+            wandb.log({
+                "config/guidance_scale": self.config.guidance_scale,
+                "config/image_guidance_scale": self.config.image_guidance_scale,
+                "config/learning_rate": self.config.latent_lr,
+                "config/loss_type": self.config.loss_type,
+                "config/diffusion_type": self.config.diffusion_type,
+            })
 
         self.avg_loss_sds = []
 
@@ -308,6 +319,7 @@ class TexturePipeline(nn.Module):
         # latent = z0
         latents, _, _ = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
         latents = latents.permute(0, 3, 1, 2)
+        not_encoded_latents = latents
 
         if downsample:
             if self.config.downsample == "vae":
@@ -318,8 +330,7 @@ class TexturePipeline(nn.Module):
                 raise ValueError("invalid downsampling mode.")
 
         # here (after encoding) latent x_initial
-        #TODO: return also latent before encoding (z0)
-        return latents
+        return latents, not_encoded_latents
 
     @torch.no_grad()
     def _benchmark_step(self, image, text):
@@ -381,7 +392,8 @@ class TexturePipeline(nn.Module):
             Rs, Ts, fovs, ids = self.studio.sample_cameras(279, self.config.batch_size, random_cameras=False)            
             cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
-            latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
+            latents, not_encoded_latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
+
             t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
             # TODO: latents = latents * self.scheduler.init_noise_sigma yes
 
@@ -396,10 +408,22 @@ class TexturePipeline(nn.Module):
             # compute loss
             self.texture_optimizer.zero_grad()
 
-            sds_loss = self.guidance.compute_sds_loss(
-                latents, noisy_latents, noise, t.to(latents.dtype), 
-                control=conditioning_image
-            )
+            if(self.config.loss_space == "latent"):
+                sds_loss = self.guidance.compute_sds_loss(
+                    latents, 
+                    noisy_latents,
+                    noise, 
+                    t.to(latents.dtype), 
+                    control=conditioning_image
+                )
+
+            else:
+                sds_loss = self.guidance.compute_image_space_sds_loss(
+                    noisy_latents,
+                    not_encoded_latents, 
+                    t.to(latents.dtype), 
+                    control=conditioning_image
+                )
 
             sds_loss.backward()
             self.texture_optimizer.step()
@@ -454,11 +478,11 @@ class TexturePipeline(nn.Module):
 
                     if self.config.texture_type == "latent":
                             with torch.no_grad():
-                                latents = self.forward(cameras, False, True, is_direct=("hashgrid" not in self.config.texture_type))
+                                latents, _ = self.forward(cameras, False, True, is_direct=("hashgrid" not in self.config.texture_type))
                                 latents = self.guidance.decode_latent_texture(latents)
                     else:
                         with torch.no_grad():
-                            latents = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
+                            latents, _ = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
                             latents = (latents / 2 + 0.5).clamp(0, 1)
                         
                     latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))

@@ -313,6 +313,26 @@ class Guidance(nn.Module):
 
         return loss
     
+    def compute_image_space_sds_loss(self, noisy_latents, not_encoded_latents, t, control=None):
+        with torch.no_grad():
+            noise_pred = self.predict_noise(
+                self.unet, 
+                noisy_latents, 
+                t,
+                cross_attention_kwargs={},
+                guidance_scale=self.config.guidance_scale,
+                image_guidance_scale=self.config.image_guidance_scale,
+                control=control
+            )
+
+            x0 = self.scheduler.step(noise_pred, int(t), noisy_latents).pred_original_sample
+            x0 = self.vae.decode(x0).sample
+            x0 = (x0 / 2 + 0.5).clamp(0, 1)
+
+        loss = 0.5 * F.mse_loss(not_encoded_latents, x0, reduction="mean")
+
+        return loss
+    
     def encode_image(self, image):
         # this line only works for singular batch. for batch with multiple elements check rgb2x prepare_image_latents
         image_latents = self.vae.encode(image).latent_dist.mode()
