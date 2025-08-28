@@ -1,7 +1,7 @@
 # VSD guidance
-guidance_scale: 10.0
+guidance_scale: 1.0
 guidance_scale_phi: 1.0
-image_guidance_scale: 50.0
+image_guidance_scale: 1.0
 phi_scale: 1.0
 grad_scale: 1.0
 latent_lr: 1e-1
@@ -30,9 +30,7 @@ enable_clip_benchmark: True
 load_lora_weights: ""
 
 # logging
-show_decoded_latents: True
 show_original_texture: True
-show_conditioning_image: True
 show_visible_texels: False
 show_rgb_gt: False
 
@@ -148,6 +146,10 @@ blender_cameras: ${scene_dir}/${scene_id}/cameras/blender.json
 # wandb
 use_wandb: True
 wandb_log_hyperparameters: True
+wandb_log_conditioning_image: True
+wandb_log_decoded_latents: True
+wandb_log_pred_original_sample: True
+wandb_log_noisy_latents: True
 
 #rgb2x
 cache_dir: models/rgb2x_cache

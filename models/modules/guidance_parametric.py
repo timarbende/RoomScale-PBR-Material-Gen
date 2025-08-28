@@ -227,6 +227,7 @@ class Guidance(nn.Module):
     def prepare_one_latent(self, latents, t):
         noise = torch.randn_like(latents).to(self.device)
         noisy_latents = self.scheduler.add_noise(latents, noise, t)
+        noisy_latents = noisy_latents * self.scheduler.init_noise_sigma
         clean_latents = self.scheduler.step(noise, t, noisy_latents).pred_original_sample
 
         return noise, noisy_latents, clean_latents
@@ -296,10 +297,6 @@ class Guidance(nn.Module):
                 control=control
             )
 
-        # TODO get x0 (completely denoised image: schedulerből a pred_original_sample)
-        # x0 = decode(ddim_scale(noisy_latent - noise_pred)), de ezt megkaphatjuk a pred_original_sample-l
-        # TODO: image-space loss: grad = z0 - x0
-
         grad = self.config.grad_scale * (noise_pred - noise)
         grad = torch.nan_to_num(grad)
 
@@ -307,7 +304,6 @@ class Guidance(nn.Module):
         
         # d(loss)/d(latents) = latents - target = latents - (latents - grad) = grad
 
-        # TODO: in the long run we will probably need to use image-space loss (decode into rgb and compute loss there)
         target = (latents - grad).detach()
         loss = 0.5 * F.mse_loss(latents, target, reduction="mean")
 
@@ -326,12 +322,13 @@ class Guidance(nn.Module):
             )
 
             x0 = self.scheduler.step(noise_pred, int(t), noisy_latents).pred_original_sample
+            x0 = x0 / self.vae.config.scaling_factor
             x0 = self.vae.decode(x0).sample
             x0 = (x0 / 2 + 0.5).clamp(0, 1)
 
-        loss = 0.5 * F.mse_loss(not_encoded_latents, x0, reduction="mean")
+        loss = F.mse_loss(not_encoded_latents, x0, reduction="mean")
 
-        return loss
+        return loss, x0
     
     def encode_image(self, image):
         # this line only works for singular batch. for batch with multiple elements check rgb2x prepare_image_latents
