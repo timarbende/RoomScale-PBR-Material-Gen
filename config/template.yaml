@@ -4,7 +4,7 @@ guidance_scale_phi: 1.0
 image_guidance_scale: 1.0
 phi_scale: 1.0
 grad_scale: 1.0
-latent_lr: 1e-1
+latent_lr: 1e-2
 latent_wd: 0
 phi_lr: 1e-4
 latent_encoder_lr: 3e-2
@@ -30,7 +30,7 @@ enable_clip_benchmark: True
 load_lora_weights: ""
 
 # logging
-show_original_texture: True
+show_original_texture: False
 show_visible_texels: False
 show_rgb_gt: False
 
@@ -39,7 +39,7 @@ loss_type: sds # vsd / sds / l2
 loss_space: image # image / latent
 diffusion_type: d2i # t2i / d2i / d2i_controlnet
 generation_mode: vsd # t2i / vsd 
-t_schedule: anneal # random / t_stages2 / anneal -> need to set num_anneal_steps
+t_schedule: random  # random / t_stages2 / anneal -> need to set num_anneal_steps
 downsample: vae # interpolate / vae -> refer to texture type below
 
 # rendering
@@ -144,12 +144,14 @@ blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
 blender_cameras: ${scene_dir}/${scene_id}/cameras/blender.json
 
 # wandb
-use_wandb: True
+use_wandb: False
 wandb_log_hyperparameters: True
 wandb_log_conditioning_image: True
 wandb_log_decoded_latents: True
 wandb_log_pred_original_sample: True
 wandb_log_noisy_latents: True
+wandb_log_not_encoded_latents: True
+wandb_log_noise: True
 
 #rgb2x
 cache_dir: models/rgb2x_cache

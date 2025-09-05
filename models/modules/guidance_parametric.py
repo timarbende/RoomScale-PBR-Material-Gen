@@ -38,6 +38,9 @@ class Guidance(nn.Module):
 
         self._init_guidance()
 
+        self.not_encoded_noise = torch.rand(size=(1, 3, 768, 768), dtype=torch.float32).to(self.device)
+        self.noise = self.encode_latent_texture(self.not_encoded_noise)
+
     def _init_guidance(self):
         self._init_backbone()
         self._init_t_schedule()
@@ -143,14 +146,14 @@ class Guidance(nn.Module):
             return_tensors="pt"
         )
         text_input_ids = text_inputs.input_ids.to(self.device)
-        self._check_for_removed_text(text_input_ids)
+        # self._check_for_removed_text(text_input_ids)
 
         with torch.no_grad():
             text_embeddings = self.text_encoder(text_input_ids)[0]
 
         text_embeddings = text_embeddings.to(dtype=self.text_encoder.dtype, device=self.device)
 
-        max_length = text_input_ids.shape[-1]
+        max_length = text_embeddings.shape[1]
         uncond_input = self.tokenizer(
             [self.n_prompt], 
             padding="max_length", 
@@ -224,19 +227,21 @@ class Guidance(nn.Module):
         
         return self.vae.config.scaling_factor * sample
     
-    def prepare_one_latent(self, latents, t):
-        noise = torch.randn_like(latents).to(self.device)
+    def add_noise_to_one_latent(self, latents, t):
+        # noise = torch.randn_like(latents).to(self.device)
+        noise = self.noise
         noisy_latents = self.scheduler.add_noise(latents, noise, t)
         noisy_latents = noisy_latents * self.scheduler.init_noise_sigma
-        clean_latents = self.scheduler.step(noise, t, noisy_latents).pred_original_sample
+        # clean_latents = self.scheduler.step(noise, t, noisy_latents).pred_original_sample
 
-        return noise, noisy_latents, clean_latents
+        return noise, noisy_latents# , clean_latents
 
-    def prepare_latents(self, latents, t, batch_size):
+    def add_noise_to_latents(self, latents, t, batch_size):
         t = torch.tensor([t]).to(self.device)
-        noise, noisy_latents, clean_latents = self.prepare_one_latent(latents, t)
+        # noise, noisy_latents, clean_latents = self.prepare_one_latent(latents, t)
+        noise, noisy_latents = self.add_noise_to_one_latent(latents, t)
 
-        return t, noise, noisy_latents, clean_latents
+        return t, noise, noisy_latents# , clean_latents
     
     def predict_noise(self, unet, noisy_latents, t, cross_attention_kwargs, guidance_scale, image_guidance_scale, control=None):
 

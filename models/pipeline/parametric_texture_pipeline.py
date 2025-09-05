@@ -367,19 +367,7 @@ class TexturePipeline(nn.Module):
         return image_latents
 
     def fit(self):
-
-        # rgbx pipeline:
-        # 1.: define batch_size, device, do_classifier_free_guidance
-        # 2.: decode prompt
-        # 3.: preprocess the image
-        # 4.: set timesteps
-        # 5.: prepare image latents (get height and width and take product with vae_scale_factor)
-        # 6.: prepare latent variables
-        # 7.: prepare extra step kwargs: add eta generator for DDIM
-        # 8.: denoise
-
-        # rgb2x normalizes the image to [-1, 1]
-        # rgb2x scales image latents (conditioning image) with vae.config.scaling_factor
+        # the only 2 things different here than rgb2x are: textual inversion and conditional attention mask for encoding text prompt
 
         pbar = tqdm(self.guidance.chosen_ts)
 
@@ -387,7 +375,7 @@ class TexturePipeline(nn.Module):
 
         for step, chosen_t in enumerate(pbar):
 
-            chosen_t = chosen_t * 0 + 999
+            wandb_log = {}
 
             #Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
             # hardcoded camera 279
@@ -396,15 +384,26 @@ class TexturePipeline(nn.Module):
 
             latents, not_encoded_latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
 
-            t, noise, noisy_latents, _ = self.guidance.prepare_latents(latents, chosen_t, self.config.batch_size)
+            if(self.config.use_wandb and self.config.wandb_log_not_encoded_latents):
+                wandb_log["clean latents"] = wandb.Image(
+                    torchvision.transforms.ToPILImage()(not_encoded_latents[0]).convert("RGB")
+                )
+
+            t, noise, noisy_latents = self.guidance.add_noise_to_latents(latents, chosen_t, self.config.batch_size)
+
+            if(self.config.use_wandb and self.config.wandb_log_noise):
+                wandb_log["noise"] = wandb.Image(
+                    torchvision.transforms.ToPILImage()(self.guidance.not_encoded_noise[0]).convert("RGB")
+                )
 
             conditioning_image = self.render_conditioning_image(cameras).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
+            conditioning_image_log = conditioning_image
             conditioning_image = self.normalize_image(conditioning_image)
             conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :]
             
-            conditioning_image = self.guidance.encode_image(conditioning_image)
+            # scaling is also done in encode_latent_texture
+            conditioning_image = self.guidance.encode_latent_texture(conditioning_image)
             conditioning_image = self.prepare_conditioning_image_input(conditioning_image)
-            conditioning_image = self.guidance.scale_conditioning_image(conditioning_image)
 
             # compute loss
             self.texture_optimizer.zero_grad()
@@ -474,10 +473,8 @@ class TexturePipeline(nn.Module):
                         self.inference(self.config.log_dir, step, self.config.texture_size)
 
                 if self.config.use_wandb:
-                    wandb_log = { 
-                            "train/avg_loss": np.mean(self.avg_loss_sds),
-                            "time step": chosen_t
-                    }
+                    wandb_log["train/avg_loss"] = np.mean(self.avg_loss_sds)
+                    wandb_log["time step"] = chosen_t
                     
                     if self.config.wandb_log_decoded_latents:
                     #for view_id in range(self.config.log_latents_views):
@@ -502,7 +499,7 @@ class TexturePipeline(nn.Module):
                         wandb_log["train/clip_score"] = clip_score
 
                     if self.config.wandb_log_conditioning_image:
-                        conditioning_image_log = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
+                        conditioning_image_log = conditioning_image_log.permute(0, 3, 1, 2)
                         conditioning_image_log = torchvision.transforms.ToPILImage()(conditioning_image_log[0])
                         conditioning_image_log = conditioning_image_log.convert("RGB")
                         conditioning_image_log = conditioning_image_log.resize((self.config.decode_size, self.config.decode_size))
@@ -515,11 +512,13 @@ class TexturePipeline(nn.Module):
                         wandb_log["original sample predicate"] = wandb_x0_rendering
 
                     if self.config.wandb_log_noisy_latents:
-                        noisy_latents_log = torchvision.transforms.ToPILImage()(
-                            (noisy_latents[0, :3] / 2 + 0.5).clamp(0, 1)
-                        ).convert("RGB")
-                        wandb_noisy_latents_rendering = wandb.Image(noisy_latents_log)
-                        wandb_log["noisy latents"] = wandb_noisy_latents_rendering
+                        with torch.no_grad():
+                            noisy_latents_log = 1 / self.guidance.vae.config.scaling_factor * noisy_latents
+                            noisy_latents_log = self.guidance.vae.decode(noisy_latents_log.contiguous()).sample # B, 3, H, W
+                            noisy_latents_log = (noisy_latents_log / 2 + 0.5).clamp(0, 1)
+                            noisy_latents_log = torchvision.transforms.ToPILImage()(noisy_latents_log[0]).convert("RGB")
+                            wandb_noisy_latents_rendering = wandb.Image(noisy_latents_log)
+                            wandb_log["noisy latents"] = wandb_noisy_latents_rendering
 
                     wandb.log(wandb_log)
 
