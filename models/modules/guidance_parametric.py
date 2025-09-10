@@ -38,9 +38,6 @@ class Guidance(nn.Module):
 
         self._init_guidance()
 
-        self.not_encoded_noise = torch.rand(size=(1, 3, 768, 768), dtype=torch.float32).to(self.device)
-        self.noise = self.encode_latent_texture(self.not_encoded_noise)
-
     def _init_guidance(self):
         self._init_backbone()
         self._init_t_schedule()
@@ -228,8 +225,7 @@ class Guidance(nn.Module):
         return self.vae.config.scaling_factor * sample
     
     def add_noise_to_one_latent(self, latents, t):
-        # noise = torch.randn_like(latents).to(self.device)
-        noise = self.noise
+        noise = torch.randn_like(latents).to(self.device)
         noisy_latents = self.scheduler.add_noise(latents, noise, t)
         noisy_latents = noisy_latents * self.scheduler.init_noise_sigma
         # clean_latents = self.scheduler.step(noise, t, noisy_latents).pred_original_sample

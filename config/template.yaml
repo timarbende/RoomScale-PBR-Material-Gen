@@ -43,11 +43,11 @@ t_schedule: random  # random / t_stages2 / anneal -> need to set num_anneal_step
 downsample: vae # interpolate / vae -> refer to texture type below
 
 # rendering
-latent_size: 96 # DO NOT CHANGE unless you know what you're doing!!!
+latent_size: 64 # DO NOT CHANGE unless you know what you're doing!!!
 latent_channels: 3 # DO NOT CHANGE unless you know what you're doing!!!
 render_channels: 3 # DO NOT CHANGE unless you know what you're doing!!!
-render_size: 768 # DO NOT CHANGE unless you know what you're doing!!!
-decode_size: 768 # DO NOT CHANGE unless you know what you're doing!!!
+render_size: 512 # DO NOT CHANGE unless you know what you're doing!!!
+decode_size: 512 # DO NOT CHANGE unless you know what you're doing!!!
 latent_texture_size: 256 # optimization target size
 latent_background_size: 256 # optimization target size
 decode_texture_size: 128
@@ -68,7 +68,7 @@ azim: [-180, 180]
 seed: 42
 num_steps: 30000
 num_anneal_steps: 5000
-log_steps: 100
+log_steps: 20
 log_latents_views: 10
 batch_size: 1
 verbose_mode: False
@@ -144,14 +144,13 @@ blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
 blender_cameras: ${scene_dir}/${scene_id}/cameras/blender.json
 
 # wandb
-use_wandb: False
+use_wandb: True
 wandb_log_hyperparameters: True
 wandb_log_conditioning_image: True
 wandb_log_decoded_latents: True
 wandb_log_pred_original_sample: True
 wandb_log_noisy_latents: True
 wandb_log_not_encoded_latents: True
-wandb_log_noise: True
 
 #rgb2x
 cache_dir: models/rgb2x_cache

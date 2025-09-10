@@ -313,13 +313,12 @@ class TexturePipeline(nn.Module):
         mesh, texture, background_mesh, background_texture = self._prepare_mesh(inference)
 
         anchors = self.texture_mesh.instance_anchors if self.config.enable_anchor_embedding else None
-
-        # for VSD -> 512x512
-        # this is to get more texels involved 
-        # latent = z0
+ 
         latents, _, _ = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
         latents = latents.permute(0, 3, 1, 2)
+        
         not_encoded_latents = latents
+        not_encoded_latents = (not_encoded_latents / 2 + 0.5).clamp(0, 1)
 
         if downsample:
             if self.config.downsample == "vae":
@@ -329,7 +328,6 @@ class TexturePipeline(nn.Module):
             else:
                 raise ValueError("invalid downsampling mode.")
 
-        # here (after encoding) latent x_initial
         return latents, not_encoded_latents
 
     @torch.no_grad()
@@ -391,11 +389,6 @@ class TexturePipeline(nn.Module):
 
             t, noise, noisy_latents = self.guidance.add_noise_to_latents(latents, chosen_t, self.config.batch_size)
 
-            if(self.config.use_wandb and self.config.wandb_log_noise):
-                wandb_log["noise"] = wandb.Image(
-                    torchvision.transforms.ToPILImage()(self.guidance.not_encoded_noise[0]).convert("RGB")
-                )
-
             conditioning_image = self.render_conditioning_image(cameras).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
             conditioning_image_log = conditioning_image
             conditioning_image = self.normalize_image(conditioning_image)
@@ -427,6 +420,14 @@ class TexturePipeline(nn.Module):
                 )
 
             sds_loss.backward()
+
+            '''TODO: uncomment this
+            torch.nn.utils.clip_grad_norm_(self._get_texture_parameters(), 1e-1)
+                for p in self._get_texture_parameters():
+                    if p.grad is not None:
+                        p.grad.nan_to_num_()
+            '''
+
             self.texture_optimizer.step()
             
             if(self.config.use_wandb):
@@ -492,11 +493,8 @@ class TexturePipeline(nn.Module):
                         
                         latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))
 
-                        clip_score = self._benchmark_step(latents_image, self.config.prompt)
-
                         wandb_latent_rendering = wandb.Image(latents_image)
                         wandb_log["optimized texture"] = wandb_latent_rendering
-                        wandb_log["train/clip_score"] = clip_score
 
                     if self.config.wandb_log_conditioning_image:
                         conditioning_image_log = conditioning_image_log.permute(0, 3, 1, 2)
