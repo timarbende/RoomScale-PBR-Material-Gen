@@ -43,11 +43,11 @@ t_schedule: random  # random / t_stages2 / anneal -> need to set num_anneal_step
 downsample: vae # interpolate / vae -> refer to texture type below
 
 # rendering
-latent_size: 64 # DO NOT CHANGE unless you know what you're doing!!!
+latent_size: 64 # DO NOT CHANGE unless you know what you're doing!!!      # used only when downsample="interpolate" 
 latent_channels: 3 # DO NOT CHANGE unless you know what you're doing!!!
 render_channels: 3 # DO NOT CHANGE unless you know what you're doing!!!
-render_size: 512 # DO NOT CHANGE unless you know what you're doing!!!
-decode_size: 512 # DO NOT CHANGE unless you know what you're doing!!!
+render_size: 512 # DO NOT CHANGE unless you know what you're doing!!!     # used to set rendered image size
+decode_size: 512 # DO NOT CHANGE unless you know what you're doing!!!     # used only for logging
 latent_texture_size: 256 # optimization target size
 latent_background_size: 256 # optimization target size
 decode_texture_size: 128

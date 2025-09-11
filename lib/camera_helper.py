@@ -417,27 +417,18 @@ def init_camera_lookat(dist, elev, azim, image_size, device, fov=60, at=torch.Fl
 
     return cameras
 
-def init_camera_R_T(R, T, image_size, device, fov=60):
+def init_camera_R_T(R, T, device, fov=60):
     """init camera using R and T matrics
 
     Args:
         R (torch.FloatTensor): Rotation matrix, (N, 3, 3)
         T (torch.FloatTensor): Translation matrix, (N, 3)
-        image_size (int): rendering size
         device (torch.device): CPU or GPU
 
     Returns:
         camera: PyTorch3D camera instance
     """
-
-    if isinstance(image_size, int):
-        image_size = torch.tensor([image_size, image_size]).unsqueeze(0)
-    elif isinstance(image_size, tuple):
-        image_size = torch.tensor(image_size).unsqueeze(0)
-    else:
-        raise TypeError("invalid image size.")
-
-    # cameras = PerspectiveCameras(R=R, T=T, device=device, image_size=image_size)
+    
     cameras = FoVPerspectiveCameras(R=R, T=T, device=device, fov=fov)
 
     return cameras

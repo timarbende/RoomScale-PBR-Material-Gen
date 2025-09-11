@@ -183,8 +183,8 @@ class Studio(nn.Module):
 
         self.anchor_func = anchor_func
 
-    def set_cameras(self, R, T, fov, image_size):
-        return init_camera_R_T(R, T, image_size, self.device, fov)
+    def set_cameras(self, R, T, fov):
+        return init_camera_R_T(R, T, self.device, fov)
     
     def set_renderer(self, camera, image_size):
         return init_renderer(camera,

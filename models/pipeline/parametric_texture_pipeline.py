@@ -178,6 +178,8 @@ class TexturePipeline(nn.Module):
                 "config/guidance_scale": self.config.guidance_scale,
                 "config/image_guidance_scale": self.config.image_guidance_scale,
                 "config/learning_rate": self.config.latent_lr,
+                "config/render_size": self.config.render_size,
+                "config/latent_texture_size": self.config.latent_texture_size,
                 "config/loss_type": self.config.loss_type,
                 "config/diffusion_type": self.config.diffusion_type,
             })
@@ -378,7 +380,7 @@ class TexturePipeline(nn.Module):
             #Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
             # hardcoded camera 279
             Rs, Ts, fovs, ids = self.studio.sample_cameras(279, self.config.batch_size, random_cameras=False)            
-            cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
+            cameras = self.studio.set_cameras(Rs, Ts, fovs)
 
             latents, not_encoded_latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
 
@@ -526,7 +528,7 @@ class TexturePipeline(nn.Module):
         
         for camera_id in range(cameras_count):
             Rs, Ts, fovs, ids = self.studio.sample_cameras(camera_id, self.config.batch_size, random_cameras=False)            
-            cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
+            cameras = self.studio.set_cameras(Rs, Ts, fovs)
 
             conditioning_image = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
             conditioning_image = torchvision.transforms.ToPILImage()(conditioning_image[0])
