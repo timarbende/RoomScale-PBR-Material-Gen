@@ -15,6 +15,7 @@ rgb_scale: 0
 mv_scale: 0
 mv_apply_step: 0
 
+texture_init: zero # zero, random
 use_different_t: True
 use_lr_scheduler: False
 phi_v_prediction: False # FIXME v_prediction is still buggy 
@@ -48,8 +49,8 @@ latent_channels: 3 # DO NOT CHANGE unless you know what you're doing!!!
 render_channels: 3 # DO NOT CHANGE unless you know what you're doing!!!
 render_size: 512 # DO NOT CHANGE unless you know what you're doing!!!     # used to set rendered image size
 decode_size: 512 # DO NOT CHANGE unless you know what you're doing!!!     # used only for logging
-latent_texture_size: 256 # optimization target size
-latent_background_size: 256 # optimization target size
+latent_texture_size: 2048 # optimization target size                      
+latent_background_size: 2048 # optimization target size
 decode_texture_size: 128
 texture_size: 4096 # determined by VAE - should be decode_texture_size x8
 faces_per_pixel: 1

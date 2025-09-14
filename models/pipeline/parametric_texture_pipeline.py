@@ -164,7 +164,7 @@ class TexturePipeline(nn.Module):
             wandb.login()
             wandb.init(
                 project="SceneTex",
-                name=self.log_name+"_"+self.log_stamp+"_"+model_type,
+                name="set_latent_render_size",
                 dir=self.log_dir
             )
         else:
