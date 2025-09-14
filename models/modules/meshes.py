@@ -125,12 +125,21 @@ class TextureMesh(nn.Module):
             )
 
         else:
-            texture = torch.randn((
-                1, 
-                self.config.latent_texture_size, 
-                self.config.latent_texture_size, 
-                self.config.latent_channels
-            ), requires_grad=True, device=self.device)
+            if self.config.texture_init == "zeros":
+                texture = torch.zeros((
+                    1, 
+                    self.config.latent_texture_size, 
+                    self.config.latent_texture_size, 
+                    self.config.latent_channels
+                ), requires_grad=True, device=self.device)
+            
+            else:
+                texture = torch.randn((
+                    1, 
+                    self.config.latent_texture_size, 
+                    self.config.latent_texture_size, 
+                    self.config.latent_channels
+                ), requires_grad=True, device=self.device)
 
             mesh = self.apply_texture_to_mesh(
                 mesh_dict["mesh"],
