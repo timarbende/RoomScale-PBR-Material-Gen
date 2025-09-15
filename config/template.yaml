@@ -4,7 +4,7 @@ guidance_scale_phi: 1.0
 image_guidance_scale: 1.0
 phi_scale: 1.0
 grad_scale: 1.0
-latent_lr: 1e-3
+latent_lr: 1e-2
 latent_wd: 0
 phi_lr: 1e-4
 latent_encoder_lr: 3e-2
