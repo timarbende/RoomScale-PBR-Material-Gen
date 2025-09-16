@@ -31,6 +31,8 @@ enable_clip_benchmark: True
 load_lora_weights: ""
 
 # logging
+use_local_log: False
+local_log_steps: 1000
 show_original_texture: False
 show_visible_texels: False
 show_rgb_gt: False
@@ -69,7 +71,6 @@ azim: [-180, 180]
 seed: 42
 num_steps: 30000
 num_anneal_steps: 5000
-log_steps: 20
 log_latents_views: 10
 batch_size: 1
 verbose_mode: False
@@ -146,6 +147,7 @@ blender_cameras: ${scene_dir}/${scene_id}/cameras/blender.json
 
 # wandb
 use_wandb: True
+wandb_log_steps: 20
 wandb_log_hyperparameters: True
 wandb_log_conditioning_image: True
 wandb_log_decoded_latents: True

@@ -164,7 +164,7 @@ class TexturePipeline(nn.Module):
             wandb.login()
             wandb.init(
                 project="SceneTex",
-                name="lr1e-3",
+                name="t_start-0.3",
                 dir=self.log_dir
             )
         else:
@@ -441,9 +441,8 @@ class TexturePipeline(nn.Module):
             
             max_memory_allocated = torch.cuda.max_memory_allocated()
             pbar.set_description(f'Loss: {sds_loss.item():.6f}, sampled t : {t.item()}, GPU: {max_memory_allocated / 1024**3:.2f} GB')
-            
-            if step % self.config.log_steps == 0:
 
+            if step % self.config.local_log_steps == 0 and self.config.use_local_log:
                 # save texture field
                 checkpoint = {
                     "render_func": self.studio.render_func.state_dict()
@@ -474,53 +473,53 @@ class TexturePipeline(nn.Module):
                         decoded_texture.save(os.path.join(self.config.log_dir, "texture_{}.png".format(step)))
                     else:
                         self.inference(self.config.log_dir, step, self.config.texture_size)
-
-                if self.config.use_wandb:
-                    wandb_log["train/avg_loss"] = np.mean(self.avg_loss_sds)
-                    wandb_log["time step"] = chosen_t
-                    
-                    if self.config.wandb_log_decoded_latents:
+            
+            if step % self.config.wandb_log_steps == 0 and self.config.use_wandb:
+                wandb_log["train/avg_loss"] = np.mean(self.avg_loss_sds)
+                wandb_log["time step"] = chosen_t
+                
+                if self.config.wandb_log_decoded_latents:
                     #for view_id in range(self.config.log_latents_views):
                         #Rs, Ts, fovs, _ = self.studio.sample_cameras(view_id, 1, inference=True)
                         #cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
 
-                        if self.config.texture_type == "latent":
-                                with torch.no_grad():
-                                    latents, _ = self.forward(cameras, False, True, is_direct=("hashgrid" not in self.config.texture_type))
-                                    latents = self.guidance.decode_latent_texture(latents)
-                        else:
+                    if self.config.texture_type == "latent":
                             with torch.no_grad():
-                                latents, _ = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
-                                latents = (latents / 2 + 0.5).clamp(0, 1)
-                        
-                        latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))
-
-                        wandb_latent_rendering = wandb.Image(latents_image)
-                        wandb_log["optimized texture"] = wandb_latent_rendering
-
-                    if self.config.wandb_log_conditioning_image:
-                        conditioning_image_log = conditioning_image_log.permute(0, 3, 1, 2)
-                        conditioning_image_log = torchvision.transforms.ToPILImage()(conditioning_image_log[0])
-                        conditioning_image_log = conditioning_image_log.convert("RGB")
-                        conditioning_image_log = conditioning_image_log.resize((self.config.decode_size, self.config.decode_size))
-                        wandb_conditioning_rendering = wandb.Image(conditioning_image_log)
-                        wandb_log["conditioning image"] = wandb_conditioning_rendering
-
-                    if self.config.wandb_log_pred_original_sample and x0 is not None:
-                        x0_log = torchvision.transforms.ToPILImage()(x0[0]).convert("RGB")
-                        wandb_x0_rendering = wandb.Image(x0_log)
-                        wandb_log["original sample predicate"] = wandb_x0_rendering
-
-                    if self.config.wandb_log_noisy_latents:
+                                latents, _ = self.forward(cameras, False, True, is_direct=("hashgrid" not in self.config.texture_type))
+                                latents = self.guidance.decode_latent_texture(latents)
+                    else:
                         with torch.no_grad():
-                            noisy_latents_log = 1 / self.guidance.vae.config.scaling_factor * noisy_latents
-                            noisy_latents_log = self.guidance.vae.decode(noisy_latents_log.contiguous()).sample # B, 3, H, W
-                            noisy_latents_log = (noisy_latents_log / 2 + 0.5).clamp(0, 1)
-                            noisy_latents_log = torchvision.transforms.ToPILImage()(noisy_latents_log[0]).convert("RGB")
-                            wandb_noisy_latents_rendering = wandb.Image(noisy_latents_log)
-                            wandb_log["noisy latents"] = wandb_noisy_latents_rendering
+                            latents, _ = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
+                            latents = (latents / 2 + 0.5).clamp(0, 1)
+                        
+                    latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))
 
-                    wandb.log(wandb_log)
+                    wandb_latent_rendering = wandb.Image(latents_image)
+                    wandb_log["optimized texture"] = wandb_latent_rendering
+
+                if self.config.wandb_log_conditioning_image:
+                    conditioning_image_log = conditioning_image_log.permute(0, 3, 1, 2)
+                    conditioning_image_log = torchvision.transforms.ToPILImage()(conditioning_image_log[0])
+                    conditioning_image_log = conditioning_image_log.convert("RGB")
+                    conditioning_image_log = conditioning_image_log.resize((self.config.decode_size, self.config.decode_size))
+                    wandb_conditioning_rendering = wandb.Image(conditioning_image_log)
+                    wandb_log["conditioning image"] = wandb_conditioning_rendering
+
+                if self.config.wandb_log_pred_original_sample and x0 is not None:
+                    x0_log = torchvision.transforms.ToPILImage()(x0[0]).convert("RGB")
+                    wandb_x0_rendering = wandb.Image(x0_log)
+                    wandb_log["original sample predicate"] = wandb_x0_rendering
+
+                if self.config.wandb_log_noisy_latents:
+                    with torch.no_grad():
+                        noisy_latents_log = 1 / self.guidance.vae.config.scaling_factor * noisy_latents
+                        noisy_latents_log = self.guidance.vae.decode(noisy_latents_log.contiguous()).sample # B, 3, H, W
+                        noisy_latents_log = (noisy_latents_log / 2 + 0.5).clamp(0, 1)
+                        noisy_latents_log = torchvision.transforms.ToPILImage()(noisy_latents_log[0]).convert("RGB")
+                        wandb_noisy_latents_rendering = wandb.Image(noisy_latents_log)
+                        wandb_log["noisy latents"] = wandb_noisy_latents_rendering
+
+                wandb.log(wandb_log)
 
     # helper function to check all camera views
     def render_all_views(self):
