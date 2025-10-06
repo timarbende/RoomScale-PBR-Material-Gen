@@ -164,7 +164,7 @@ class TexturePipeline(nn.Module):
             wandb.login()
             wandb.init(
                 project="SceneTex",
-                name="t_start-0.3",
+                name="all_cams",
                 dir=self.log_dir
             )
         else:
@@ -377,9 +377,7 @@ class TexturePipeline(nn.Module):
 
             wandb_log = {}
 
-            #Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras)
-            # hardcoded camera 279
-            Rs, Ts, fovs, ids = self.studio.sample_cameras(279, self.config.batch_size, random_cameras=False)            
+            Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras) 
             cameras = self.studio.set_cameras(Rs, Ts, fovs)
 
             latents, not_encoded_latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
@@ -518,6 +516,12 @@ class TexturePipeline(nn.Module):
                         noisy_latents_log = torchvision.transforms.ToPILImage()(noisy_latents_log[0]).convert("RGB")
                         wandb_noisy_latents_rendering = wandb.Image(noisy_latents_log)
                         wandb_log["noisy latents"] = wandb_noisy_latents_rendering
+
+                if self.config.wandb_log_texture:
+                    decoded_texture = (self.texture_mesh.texture / 2 + 0.5).clamp(0, 1)
+                    decoded_texture = torchvision.transforms.ToPILImage()(decoded_texture[0].permute(2, 0, 1)).convert("RGB")
+                    decoded_texture = wandb.Image(decoded_texture)
+                    wandb_log["texture"] = decoded_texture
 
                 wandb.log(wandb_log)
 

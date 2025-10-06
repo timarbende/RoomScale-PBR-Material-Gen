@@ -80,7 +80,7 @@ use_sphere_cameras: True # False -> use trajectory, True -> use cameras pointing
 use_blenderproc_cameras: False # False -> use trajectory, True -> use cameras sampled from blenderproc
 use_blender_cameras: False # False -> use trajectory, True -> use cameras sampled from blender
 
-use_random_cameras: True # False -> sample cameras in order, True -> sample cameras randomly
+use_random_cameras: False # False -> sample cameras in order, True -> sample cameras randomly
 
 # camera direction
 use_latent_embeddings: False
@@ -147,13 +147,14 @@ blender_cameras: ${scene_dir}/${scene_id}/cameras/blender.json
 
 # wandb
 use_wandb: True
-wandb_log_steps: 20
+wandb_log_steps: 100
 wandb_log_hyperparameters: True
 wandb_log_conditioning_image: True
-wandb_log_decoded_latents: True
+wandb_log_denoised_latents: True
 wandb_log_pred_original_sample: True
-wandb_log_noisy_latents: True
-wandb_log_not_encoded_latents: True
+wandb_log_noisy_latents: False
+wandb_log_not_encoded_latents: False
+wandb_log_texture: True
 
 #rgb2x
 cache_dir: models/rgb2x_cache
