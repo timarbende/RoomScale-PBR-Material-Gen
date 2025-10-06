@@ -97,12 +97,14 @@ if __name__ == "__main__":
     print("=> initializing pipeline...")
     pipeline = init_pipeline(config=config, stamp=args.stamp, inference_mode=inference_mode)
 
-    if not inference_mode:
-        print("=> start training...")
-        with torch.autograd.set_detect_anomaly(True):
-            pipeline.fit()
-    else:
-        print("inference mode")
-        print("prompt:", config.prompt)
-        pipeline.load_checkpoint(args.checkpoint_dir, args.checkpoint_step)
-        pipeline.inference(args.checkpoint_dir, args.checkpoint_step, args.texture_size)
+    pipeline.render_all_views()
+
+#    if not inference_mode:
+#        print("=> start training...")
+#        with torch.autograd.set_detect_anomaly(True):
+#            pipeline.fit()
+#    else:
+#        print("inference mode")
+#        print("prompt:", config.prompt)
+#        pipeline.load_checkpoint(args.checkpoint_dir, args.checkpoint_step)
+#        pipeline.inference(args.checkpoint_dir, args.checkpoint_step, args.texture_size)

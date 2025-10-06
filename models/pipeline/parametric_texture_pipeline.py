@@ -164,7 +164,7 @@ class TexturePipeline(nn.Module):
             wandb.login()
             wandb.init(
                 project="SceneTex",
-                name="all_cams",
+                name="fitp",
                 dir=self.log_dir
             )
         else:
@@ -476,7 +476,7 @@ class TexturePipeline(nn.Module):
                 wandb_log["train/avg_loss"] = np.mean(self.avg_loss_sds)
                 wandb_log["time step"] = chosen_t
                 
-                if self.config.wandb_log_decoded_latents:
+                if self.config.wandb_log_denoised_latents:
                     #for view_id in range(self.config.log_latents_views):
                         #Rs, Ts, fovs, _ = self.studio.sample_cameras(view_id, 1, inference=True)
                         #cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
@@ -493,7 +493,7 @@ class TexturePipeline(nn.Module):
                     latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))
 
                     wandb_latent_rendering = wandb.Image(latents_image)
-                    wandb_log["optimized texture"] = wandb_latent_rendering
+                    wandb_log["denoised latents"] = wandb_latent_rendering
 
                 if self.config.wandb_log_conditioning_image:
                     conditioning_image_log = conditioning_image_log.permute(0, 3, 1, 2)
@@ -535,4 +535,4 @@ class TexturePipeline(nn.Module):
 
             conditioning_image = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
             conditioning_image = torchvision.transforms.ToPILImage()(conditioning_image[0])
-            conditioning_image.save("camera_{}.png".format(camera_id))
+            conditioning_image.save("fitp/fitp_camera_{}.png".format(camera_id))

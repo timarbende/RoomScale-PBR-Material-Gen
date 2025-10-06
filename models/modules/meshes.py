@@ -15,7 +15,7 @@ from pytorch3d.renderer import TexturesUV
 
 import sys
 sys.path.append("./lib")
-from lib.mesh_helper import init_multiple_meshes_xatlas, init_multiple_meshes_as_scene, init_background
+from lib.mesh_helper import init_multiple_meshes_xatlas, init_multiple_meshes_as_scene, init_background, init_scene_obj
 from lib.build_instance_map import build_instance_map
 
 sys.path.append("./models")
@@ -69,13 +69,22 @@ class TextureMesh(nn.Module):
     def _init_mesh(self):
         cache_dir = self.config.log_dir
 
-        self.mesh_dict = init_multiple_meshes_as_scene(
-            json.load(open(self.config.scene_config_path)), 
-            str(cache_dir), 
-            self.device, 
-            subdivide_factor=self.config.subdivide_factor,
-            return_dict=True
-        )
+        self.mesh_dict = {}
+
+        if self.config.mesh_init == "scene_config":
+            self.mesh_dict = init_multiple_meshes_as_scene(
+                json.load(open(self.config.scene_config_path)), 
+                str(cache_dir), 
+                self.device, 
+                subdivide_factor=self.config.subdivide_factor,
+                return_dict=True
+            )
+
+        elif self.config.mesh_init == "scene_obj":
+            self.mesh_dict = init_scene_obj(
+                scene_mesh_path= self.config.scene_mesh_path,
+                device=self.device
+            )
 
         self.mesh, self.texture = self._init_texture(self.mesh_dict)
 

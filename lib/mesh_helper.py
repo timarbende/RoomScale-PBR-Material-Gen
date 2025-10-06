@@ -551,9 +551,9 @@ def init_multiple_meshes_as_scene(scene_config, output_dir, device, join_mesh=Tr
         "verts": verts,
         "faces": faces,
         "aux": aux,
-        "scene_config": scene_config,
-        "vertices_semantics": vertices_semantics,
-        "faces_semantics": faces_semantics,
+        "scene_config": scene_config,   # never used
+        "vertices_semantics": vertices_semantics,   # never used
+        "faces_semantics": faces_semantics, # never used
     }
     
 def init_multiple_meshes_xatlas(scene_config, output_dir, device, is_force=False, subdivide_factor=0, return_mesh=True, return_dict=False):
@@ -692,4 +692,15 @@ def init_background(model_path, bounding_box, output_dir, device, is_force=False
         "verts": verts,
         "faces": faces,
         "aux": aux
+    }
+
+def init_scene_obj(scene_mesh_path, device):
+    verts, faces, aux = load_obj(scene_mesh_path, device=device)
+    mesh = load_objs_as_meshes([scene_mesh_path], device=device)
+
+    return {
+        "mesh": mesh,
+        "verts": verts,
+        "faces": faces,
+        "aux": aux,
     }

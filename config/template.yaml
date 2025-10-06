@@ -29,6 +29,7 @@ enable_vae_patch_decoding: False
 use_background: False # add a pseudo background
 enable_clip_benchmark: True
 load_lora_weights: ""
+mesh_init: scene_obj # scene_obj / scene_config
 
 # logging
 use_local_log: False
@@ -76,9 +77,10 @@ batch_size: 1
 verbose_mode: False
 
 # cameras
-use_sphere_cameras: True # False -> use trajectory, True -> use cameras pointing at one target
+camera_type: fitp # fitp / sphere / blenderproc / blender / trajectory
+use_sphere_cameras: False # False -> use trajectory, True -> use cameras pointing at one target
 use_blenderproc_cameras: False # False -> use trajectory, True -> use cameras sampled from blenderproc
-use_blender_cameras: False # False -> use trajectory, True -> use cameras sampled from blender
+use_blender_cameras: True # False -> use trajectory, True -> use cameras sampled from blender
 
 use_random_cameras: False # False -> sample cameras in order, True -> sample cameras randomly
 
@@ -138,15 +140,16 @@ prompt: "" # TODO
 a_prompt: best quality, high quality, extremely detailed, good geometry, high-res photo
 n_prompt: "" #TODO can we have n_prompt for albedo? #deformed, extra digit, fewer digits, cropped, worst quality, low quality, smoke, shading, lighting, lumination, shadow, text in image, watermarks
 
-scene_dir: data/scenes
+scene_dir: data/fitp
 scene_id: "" # TODO <house_id>/<room_id>
 scene_config_path: ${scene_dir}/${scene_id}/meshes/scene_config.json
-sphere_cameras: ${scene_dir}/${scene_id}/cameras/sphere.yaml
+sphere_cameras: ${scene_dir}/cameras/sphere.yaml
 blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
-blender_cameras: ${scene_dir}/${scene_id}/cameras/blender.json
+blender_cameras: ${scene_dir}/cameras/blender.json
+scene_mesh_path: ${scene_dir}/scene.obj
 
 # wandb
-use_wandb: True
+use_wandb: False
 wandb_log_steps: 100
 wandb_log_hyperparameters: True
 wandb_log_conditioning_image: True
