@@ -386,6 +386,50 @@ def init_3dfront_trajectory_from_blenderproc(trajectory, device):
 
     return Rs, Ts
 
+def init_fitp_blender_trajectory(trajectory, device):
+    Rs, Ts = [], []
+    for viewpoint in trajectory["frames"]:
+        c2w = torch.FloatTensor(viewpoint["transform_matrix"]).to(device)
+
+        calibrate_axis = torch.FloatTensor([
+            [1, 0, 0, 0],
+            [0, 0, -1, 0],
+            [0, -1, 0, 0],
+            [0, 0, 0, 1]
+        ]).to(device)
+        rot_z = torch.FloatTensor([
+            [np.cos(np.pi), -np.sin(np.pi), 0],
+            [np.sin(np.pi), np.cos(np.pi), 0],
+            [0, 0, 1]
+        ]).to(device)
+        rot_y = torch.FloatTensor([
+            [np.cos(np.pi), 0, -np.sin(np.pi), 0],
+            [0, 1, 0, 0],
+            [np.sin(np.pi), 0, np.cos(np.pi), 0],
+            [0, 0, 0, 1]
+        ]).to(device)
+
+        c2w = calibrate_axis @ c2w
+        c2w = rot_y @ c2w
+
+        t = c2w[:3,-1]  # Extract translation of the camera
+        r = c2w[:3, :3] @ rot_z # Extract rotation matrix of the camera
+
+        # horizontally flip the image
+        flip_x = torch.FloatTensor([
+            [-1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1]
+        ]).to(device)
+        r = r @ flip_x
+
+        t = t @ r # Make rotation local
+
+        Rs.append(r.unsqueeze(0))
+        Ts.append(t.unsqueeze(0))
+
+    return Rs, Ts
+
 # ---------------- CAMERAS ----------------------
 
 def init_camera(camera_params, image_size, device):

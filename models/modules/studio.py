@@ -13,7 +13,7 @@ from pytorch3d.ops import interpolate_face_attributes
 # customized
 import sys
 sys.path.append("./lib")
-from lib.camera_helper import init_trajectory, init_blender_trajectory, init_blenderproc_trajectory, init_camera_R_T
+from lib.camera_helper import init_trajectory, init_blender_trajectory, init_blenderproc_trajectory, init_fitp_blender_trajectory, init_camera_R_T
 from lib.render_helper import init_renderer
 from lib.shading_helper import init_flat_texel_shader
 
@@ -42,7 +42,25 @@ class Studio(nn.Module):
         self.Rs, self.Ts, self.fovs = [], [], []
         self.inference_Rs, self.inference_Ts, self.inference_fovs = [], [], []
 
-        if self.config.use_sphere_cameras:
+        if self.config.camera_type == "fitp":
+            poses = json.load(open(self.config.blender_cameras))
+            Rs, Ts = init_fitp_blender_trajectory(poses, self.device)
+            fovs = [self.config.fov] * len(Rs)
+
+            self.Rs += Rs
+            self.Ts += Ts
+            self.fovs += fovs
+
+            print("=> using {} blender cameras for training".format(len(Rs)))
+
+            # inference cameras
+            if len(self.inference_Rs) == 0 and len(self.inference_Ts) == 0 and len(self.inference_fovs) == 0:
+                interval = len(self.Rs) // self.config.log_latents_views
+                self.inference_Rs = [r for i, r in enumerate(self.Rs) if i % interval == 0]
+                self.inference_Ts = [t for i, t in enumerate(self.Ts) if i % interval == 0]
+                self.infernece_fovs = [self.config.fov for _ in range(self.config.log_latents_views)]
+
+        if self.config.camera_type == "sphere":
             sphere_cameras = OmegaConf.load(self.config.sphere_cameras)
 
             dist_linspace = np.linspace(
@@ -103,7 +121,7 @@ class Studio(nn.Module):
                 self.inference_Rs, self.inference_Ts = init_trajectory(inference_dist_list, inference_elev_list, inference_azim_list, inference_at)
                 self.infernece_fovs = inference_fov_list
 
-        if self.config.use_blenderproc_cameras:
+        if self.config.camera_type == "blenderproc":
             poses = json.load(open(self.config.blenderproc_cameras))
             Rs, Ts = init_blenderproc_trajectory(poses, self.device)
             fovs = [self.config.fov] * len(Rs)
@@ -121,7 +139,7 @@ class Studio(nn.Module):
                 self.inference_Ts = [t for i, t in enumerate(self.Ts) if i % interval == 0]
                 self.infernece_fovs = [self.config.fov for _ in range(self.config.log_latents_views)]
 
-        if self.config.use_blender_cameras:
+        if self.config.camera_type == "blender":
             poses = json.load(open(self.config.blender_cameras))
             Rs, Ts = init_blender_trajectory(poses, self.device)
             fovs = [self.config.fov] * len(Rs)

@@ -535,4 +535,4 @@ class TexturePipeline(nn.Module):
 
             conditioning_image = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
             conditioning_image = torchvision.transforms.ToPILImage()(conditioning_image[0])
-            conditioning_image.save("fitp/fitp_camera_{}.png".format(camera_id))
+            conditioning_image.save("fitp_camera_{}.png".format(camera_id))

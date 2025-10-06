@@ -77,7 +77,7 @@ batch_size: 1
 verbose_mode: False
 
 # cameras
-camera_type: fitp # fitp / sphere / blenderproc / blender / trajectory
+camera_type: fitp # fitp / sphere / blenderproc / blender
 use_sphere_cameras: False # False -> use trajectory, True -> use cameras pointing at one target
 use_blenderproc_cameras: False # False -> use trajectory, True -> use cameras sampled from blenderproc
 use_blender_cameras: True # False -> use trajectory, True -> use cameras sampled from blender
