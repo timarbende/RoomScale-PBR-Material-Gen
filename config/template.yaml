@@ -140,7 +140,7 @@ prompt: "" # TODO
 a_prompt: best quality, high quality, extremely detailed, good geometry, high-res photo
 n_prompt: "" #TODO can we have n_prompt for albedo? #deformed, extra digit, fewer digits, cropped, worst quality, low quality, smoke, shading, lighting, lumination, shadow, text in image, watermarks
 
-scene_dir: data/fitp
+scene_dir: data/kitchen_hq
 scene_id: "" # TODO <house_id>/<room_id>
 scene_config_path: ${scene_dir}/${scene_id}/meshes/scene_config.json
 sphere_cameras: ${scene_dir}/cameras/sphere.yaml

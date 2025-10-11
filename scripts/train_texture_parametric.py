@@ -97,6 +97,9 @@ if __name__ == "__main__":
     print("=> initializing pipeline...")
     pipeline = init_pipeline(config=config, stamp=args.stamp, inference_mode=inference_mode)
 
+    pipeline.debug_render_depth()
+
+    '''
     if not inference_mode:
         print("=> start training...")
         with torch.autograd.set_detect_anomaly(True):
@@ -106,3 +109,4 @@ if __name__ == "__main__":
         print("prompt:", config.prompt)
         pipeline.load_checkpoint(args.checkpoint_dir, args.checkpoint_step)
         pipeline.inference(args.checkpoint_dir, args.checkpoint_step, args.texture_size)
+    '''

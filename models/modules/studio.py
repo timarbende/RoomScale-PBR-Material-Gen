@@ -13,7 +13,7 @@ from pytorch3d.ops import interpolate_face_attributes
 # customized
 import sys
 sys.path.append("./lib")
-from lib.camera_helper import init_trajectory, init_blender_trajectory, init_blenderproc_trajectory, init_fitp_blender_trajectory, init_camera_R_T
+from lib.camera_helper import init_trajectory, init_blender_trajectory, init_blenderproc_trajectory, init_fitp_blender_trajectory, init_camera_R_T, radian_to_degree
 from lib.render_helper import init_renderer
 from lib.shading_helper import init_flat_texel_shader
 
@@ -39,17 +39,19 @@ class Studio(nn.Module):
 
     def _init_camera_settings(self):
 
-        self.Rs, self.Ts, self.fovs = [], [], []
+        self.Rs, self.Ts, self.fovs, self.image_paths = [], [], [], []
         self.inference_Rs, self.inference_Ts, self.inference_fovs = [], [], []
 
         if self.config.camera_type == "fitp":
             poses = json.load(open(self.config.blender_cameras))
-            Rs, Ts = init_fitp_blender_trajectory(poses, self.device)
-            fovs = [self.config.fov] * len(Rs)
+            Rs, Ts, image_paths = init_fitp_blender_trajectory(poses, self.device)
+            fov_rad = poses["camera_angle_x"]
+            fovs = [radian_to_degree(fov_rad)] * len(Rs)
 
             self.Rs += Rs
             self.Ts += Ts
             self.fovs += fovs
+            self.image_paths += image_paths
 
             print("=> using {} blender cameras for training".format(len(Rs)))
 
@@ -215,7 +217,7 @@ class Studio(nn.Module):
         )
 
     def _sample_one_camera(self, step, random_cameras=False, inference=False):
-        R, T, fov, idx = None, None, None, None
+        R, T, fov, idx, image_path = None, None, None, None, None
         if inference:
             idx = step % self.num_inference_cameras
             R, T, fov = self.inference_Rs[idx], self.inference_Ts[idx], self.infernece_fovs[idx]
@@ -226,15 +228,15 @@ class Studio(nn.Module):
             else:
                 idx = step % self.num_cameras
 
-            R, T, fov = self.Rs[idx], self.Ts[idx], self.fovs[idx]
+            R, T, fov, image_path = self.Rs[idx], self.Ts[idx], self.fovs[idx], self.image_paths[idx]
 
-        return R, T, fov, idx
+        return R, T, fov, idx, image_path
     
     def sample_cameras(self, step, num_samples, random_cameras=False, inference=False):
         if num_samples == 1:
             return self._sample_one_camera(step, random_cameras, inference)
         else:
-            Rs, Ts, fovs, ids = [], [], [], []
+            Rs, Ts, fovs, ids, image_paths = [], [], [], [], []
             cur_step = step % self.num_cameras
     
             if random_cameras:
@@ -245,7 +247,7 @@ class Studio(nn.Module):
 
             steps = [cur_step] + next_steps
             for s in steps:
-                R, T, fov, idx = self._sample_one_camera(s)
+                R, T, fov, idx, _ = self._sample_one_camera(s)
                 Rs.append(R)
                 Ts.append(T)
                 fovs.append(fov)
@@ -254,7 +256,7 @@ class Studio(nn.Module):
             Rs = torch.cat(Rs, dim=0)
             Ts = torch.cat(Ts, dim=0)
 
-            return Rs, Ts, fovs, ids
+            return Rs, Ts, fovs, ids, image_paths
 
     def get_uv_coordinates(self, mesh, fragments):
         xyzs = mesh.verts_padded() # (N, V, 3)
@@ -352,7 +354,7 @@ class Studio(nn.Module):
         return features, fragments, absolute_depth, relative_depth # (N, H, W, C)
     
     def render(self, renderer, mesh, texture, background=None, background_texture=None, anchors=None, is_direct=False):
-        features, fragments, absolute_depth, relative_depth = self.render_features(renderer, mesh, texture, is_direct=is_direct, is_background=False, anchors=anchors)
+        features, fragments, absolute_depth, rel_depth = self.render_features(renderer, mesh, texture, is_direct=is_direct, is_background=False, anchors=anchors)
 
         # blend background
         # NOTE there's no need to render background if no views see the background
@@ -368,6 +370,5 @@ class Studio(nn.Module):
             background_mask = fragments.zbuf == -1
             blend_zbuf = fragments.zbuf
             blend_zbuf[background_mask] = background_fragments.zbuf[background_mask]
-            absolute_depth, relative_depth = self.get_relative_depth_map(blend_zbuf)
 
-        return features, absolute_depth, relative_depth
+        return features, rel_depth

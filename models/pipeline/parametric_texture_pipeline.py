@@ -65,6 +65,7 @@ import sys
 sys.path.append("./lib")
 from models.modules import TextureMesh, Studio
 from models.modules.guidance_parametric import Guidance
+import cv2
 
 class TexturePipeline(nn.Module):
     def __init__(self, 
@@ -164,7 +165,7 @@ class TexturePipeline(nn.Module):
             wandb.login()
             wandb.init(
                 project="SceneTex",
-                name="fitp",
+                name="kitchen_hq",
                 dir=self.log_dir
             )
         else:
@@ -316,7 +317,7 @@ class TexturePipeline(nn.Module):
 
         anchors = self.texture_mesh.instance_anchors if self.config.enable_anchor_embedding else None
  
-        latents, _, _ = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
+        latents = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
         latents = latents.permute(0, 3, 1, 2)
         
         not_encoded_latents = latents
@@ -355,7 +356,7 @@ class TexturePipeline(nn.Module):
 
     # normalizes image to [-1, 1]
     def normalize_image(self, image):
-        return image * 2 - 1
+        return (image * 2 - 1).clamp(-1, 1)
     
     # prepare for classifier-free guidance
     def prepare_conditioning_image_input(self, conditioning_image):
@@ -377,7 +378,7 @@ class TexturePipeline(nn.Module):
 
             wandb_log = {}
 
-            Rs, Ts, fovs, ids = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras) 
+            Rs, Ts, fovs, ids, image_path = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras) 
             cameras = self.studio.set_cameras(Rs, Ts, fovs)
 
             latents, not_encoded_latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
@@ -389,14 +390,20 @@ class TexturePipeline(nn.Module):
 
             t, noise, noisy_latents = self.guidance.add_noise_to_latents(latents, chosen_t, self.config.batch_size)
 
-            conditioning_image = self.render_conditioning_image(cameras).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
-            conditioning_image_log = conditioning_image
-            conditioning_image = self.normalize_image(conditioning_image)
-            conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :]
+            conditioning_image = None
+            if(image_path is not None):
+                full_path = os.path.join(self.config.scene_dir, image_path + ".exr")
+                conditioning_image = cv2.imread(full_path, cv2.IMREAD_UNCHANGED)
+                conditioning_image = cv2.cvtColor(conditioning_image, cv2.COLOR_BGR2RGB)
+                conditioning_image = conditioning_image.astype(np.float32)
+                conditioning_image = torch.from_numpy(conditioning_image).permute(2, 0, 1).unsqueeze(0).to(self.device)
+                
+                conditioning_image_log = conditioning_image
+                conditioning_image = self.normalize_image(conditioning_image)
             
-            # scaling is also done in encode_latent_texture
-            conditioning_image = self.guidance.encode_latent_texture(conditioning_image)
-            conditioning_image = self.prepare_conditioning_image_input(conditioning_image)
+                # scaling is also done in encode_latent_texture
+                conditioning_image = self.guidance.encode_latent_texture(conditioning_image)
+                conditioning_image = self.prepare_conditioning_image_input(conditioning_image)
 
             # compute loss
             self.texture_optimizer.zero_grad()
@@ -477,26 +484,26 @@ class TexturePipeline(nn.Module):
                 wandb_log["time step"] = chosen_t
                 
                 if self.config.wandb_log_denoised_latents:
-                    #for view_id in range(self.config.log_latents_views):
-                        #Rs, Ts, fovs, _ = self.studio.sample_cameras(view_id, 1, inference=True)
-                        #cameras = self.studio.set_cameras(Rs, Ts, fovs, self.config.render_size)
+                    renderings = []
+                    for view_id in range(self.config.log_latents_views):
+                        Rs, Ts, fovs, _, _ = self.studio.sample_cameras(view_id, 1, inference=True)
+                        cameras = self.studio.set_cameras(Rs, Ts, fovs)
 
-                    if self.config.texture_type == "latent":
+                        if self.config.texture_type == "latent":
+                                with torch.no_grad():
+                                    latents, _ = self.forward(cameras, False, True, is_direct=("hashgrid" not in self.config.texture_type))
+                                    latents = self.guidance.decode_latent_texture(latents)
+                        else:
                             with torch.no_grad():
-                                latents, _ = self.forward(cameras, False, True, is_direct=("hashgrid" not in self.config.texture_type))
-                                latents = self.guidance.decode_latent_texture(latents)
-                    else:
-                        with torch.no_grad():
-                            latents, _ = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
-                            latents = (latents / 2 + 0.5).clamp(0, 1)
+                                latents, _ = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
+                                latents = (latents / 2 + 0.5).clamp(0, 1)
                         
-                    latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))
+                        latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))
+                        renderings.append(wandb.Image(latents_image))
 
-                    wandb_latent_rendering = wandb.Image(latents_image)
-                    wandb_log["denoised latents"] = wandb_latent_rendering
+                    wandb_log["denoised latents"] = renderings
 
                 if self.config.wandb_log_conditioning_image:
-                    conditioning_image_log = conditioning_image_log.permute(0, 3, 1, 2)
                     conditioning_image_log = torchvision.transforms.ToPILImage()(conditioning_image_log[0])
                     conditioning_image_log = conditioning_image_log.convert("RGB")
                     conditioning_image_log = conditioning_image_log.resize((self.config.decode_size, self.config.decode_size))
@@ -530,9 +537,25 @@ class TexturePipeline(nn.Module):
         cameras_count = 5000
         
         for camera_id in range(cameras_count):
-            Rs, Ts, fovs, ids = self.studio.sample_cameras(camera_id, self.config.batch_size, random_cameras=False)            
+            Rs, Ts, fovs, ids, _ = self.studio.sample_cameras(camera_id, self.config.batch_size, random_cameras=False)            
             cameras = self.studio.set_cameras(Rs, Ts, fovs)
 
             conditioning_image = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
             conditioning_image = torchvision.transforms.ToPILImage()(conditioning_image[0])
-            conditioning_image.save("fitp_camera_{}.png".format(camera_id))
+            conditioning_image.save("ftip_camera_{}.png".format(camera_id))
+
+    def debug_render_depth(self):
+        cameras_count = 5000
+
+        for camera_id in range(cameras_count):
+            Rs, Ts, fovs, ids, _ = self.studio.sample_cameras(camera_id, 1, random_cameras=False)
+            camera = self.studio.set_cameras(Rs, Ts, fovs)
+            
+            renderer = self.studio.set_renderer(camera, self.config.render_size)
+
+            mesh, texture, background_mesh, background_texture = self._prepare_mesh(True)
+ 
+            _, depth_map = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, None, True)
+
+            pil_image = torchvision.transforms.ToPILImage()(depth_map)
+            pil_image.save("ftip_camera_{}.png".format(camera_id))
