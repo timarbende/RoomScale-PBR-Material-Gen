@@ -67,6 +67,8 @@ from models.modules import TextureMesh, Studio
 from models.modules.guidance_parametric import Guidance
 import cv2
 
+from PIL import Image
+
 class TexturePipeline(nn.Module):
     def __init__(self, 
         config,
@@ -543,19 +545,3 @@ class TexturePipeline(nn.Module):
             conditioning_image = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
             conditioning_image = torchvision.transforms.ToPILImage()(conditioning_image[0])
             conditioning_image.save("ftip_camera_{}.png".format(camera_id))
-
-    def debug_render_depth(self):
-        cameras_count = 5000
-
-        for camera_id in range(cameras_count):
-            Rs, Ts, fovs, ids, _ = self.studio.sample_cameras(camera_id, 1, random_cameras=False)
-            camera = self.studio.set_cameras(Rs, Ts, fovs)
-            
-            renderer = self.studio.set_renderer(camera, self.config.render_size)
-
-            mesh, texture, background_mesh, background_texture = self._prepare_mesh(True)
- 
-            _, depth_map = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, None, True)
-
-            pil_image = torchvision.transforms.ToPILImage()(depth_map)
-            pil_image.save("ftip_camera_{}.png".format(camera_id))

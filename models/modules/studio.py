@@ -13,7 +13,7 @@ from pytorch3d.ops import interpolate_face_attributes
 # customized
 import sys
 sys.path.append("./lib")
-from lib.camera_helper import init_trajectory, init_blender_trajectory, init_blenderproc_trajectory, init_fitp_blender_trajectory, init_camera_R_T, radian_to_degree
+from lib.camera_helper import init_trajectory, init_blender_trajectory, init_blenderproc_trajectory, init_fipt_blender_trajectory, init_camera_R_T, radian_to_degree
 from lib.render_helper import init_renderer
 from lib.shading_helper import init_flat_texel_shader
 
@@ -42,9 +42,9 @@ class Studio(nn.Module):
         self.Rs, self.Ts, self.fovs, self.image_paths = [], [], [], []
         self.inference_Rs, self.inference_Ts, self.inference_fovs = [], [], []
 
-        if self.config.camera_type == "fitp":
+        if self.config.camera_type == "fipt":
             poses = json.load(open(self.config.blender_cameras))
-            Rs, Ts, image_paths = init_fitp_blender_trajectory(poses, self.device)
+            Rs, Ts, image_paths = init_fipt_blender_trajectory(poses, self.device)
             fov_rad = poses["camera_angle_x"]
             fovs = [radian_to_degree(fov_rad)] * len(Rs)
 
@@ -287,19 +287,24 @@ class Studio(nn.Module):
     def get_relative_depth_map(self, zbuf, pad_value=10):
         absolute_depth = zbuf[..., 0] # B, H, W
         no_depth = -1
+        relative_depth = torch.zeros_like(absolute_depth)
 
-        depth_min, depth_max = absolute_depth[absolute_depth != no_depth].min(), absolute_depth[absolute_depth != no_depth].max()
-        target_min, target_max = 50, 255
+        valid_depth = absolute_depth[absolute_depth != no_depth]
+        if(valid_depth.numel() > 0):
+            depth_min = valid_depth.min()
+            depth_max = valid_depth.max()
+        
+            target_min, target_max = 50, 255
 
-        depth_value = absolute_depth[absolute_depth != no_depth]
-        depth_value = depth_max - depth_value # reverse values
+            depth_value = absolute_depth[absolute_depth != no_depth]
+            depth_value = depth_max - depth_value # reverse values
 
-        depth_value /= (depth_max - depth_min)
-        depth_value = depth_value * (target_max - target_min) + target_min
+            depth_value /= (depth_max - depth_min)
+            depth_value = depth_value * (target_max - target_min) + target_min
 
-        relative_depth = absolute_depth.clone()
-        relative_depth[absolute_depth != no_depth] = depth_value
-        relative_depth[absolute_depth == no_depth] = pad_value # not completely black
+            relative_depth = absolute_depth.clone()
+            relative_depth[absolute_depth != no_depth] = depth_value
+            relative_depth[absolute_depth == no_depth] = pad_value # not completely black
 
         return absolute_depth, relative_depth
 

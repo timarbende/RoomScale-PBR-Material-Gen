@@ -386,49 +386,29 @@ def init_3dfront_trajectory_from_blenderproc(trajectory, device):
 
     return Rs, Ts
 
-def init_fitp_blender_trajectory(trajectory, device):
+def init_fipt_blender_trajectory(trajectory, device):
+
     Rs, Ts, image_paths = [], [], []
     for frame in trajectory["frames"]:
         image_paths.append(frame["file_path"])
         c2w = torch.FloatTensor(frame["transform_matrix"]).to(device)
 
-        calibrate_axis = torch.FloatTensor([
-            [1, 0, 0, 0],
-            [0, 0, -1, 0],
-            [0, -1, 0, 0],
-            [0, 0, 0, 1]
-        ]).to(device)
-        rot_z = torch.FloatTensor([
-            [np.cos(np.pi), -np.sin(np.pi), 0],
-            [np.sin(np.pi), np.cos(np.pi), 0],
-            [0, 0, 1]
-        ]).to(device)
-        rot_y = torch.FloatTensor([
-            [np.cos(np.pi), 0, -np.sin(np.pi), 0],
-            [0, 1, 0, 0],
-            [np.sin(np.pi), 0, np.cos(np.pi), 0],
-            [0, 0, 0, 1]
-        ]).to(device)
+        eye = c2w[:3, 3]
+        eye.unsqueeze_(0)
 
-        #c2w = calibrate_axis @ c2w
-        #c2w = rot_y @ c2w
+        r = c2w[:3, :3]
 
-        t = c2w[:3,-1]  # Extract translation of the camera
-        #r = c2w[:3, :3] @ rot_z # Extract rotation matrix of the camera
-        r = c2w[:3, :3] #@ rot_z # Extract rotation matrix of the camera
+        up = torch.tensor([[0, 1, 0]], dtype=torch.float32, device=device) @ r.T
+        at = eye + torch.tensor([[0, 0, 1]], dtype=torch.float32, device=device) @ r.T
 
-        # horizontally flip the image
-        flip_x = torch.FloatTensor([
-            [-1, 0, 0],
-            [0, 1, 0],
-            [0, 0, 1]
-        ]).to(device)
-        #r = r @ flip_x
+        r, t = look_at_view_transform(
+            eye=eye,
+            at=at,
+            up=up
+        )
 
-        #t = t @ r # Make rotation local
-
-        Rs.append(r.unsqueeze(0))
-        Ts.append(t.unsqueeze(0))
+        Rs.append(r)
+        Ts.append(t)
 
     return Rs, Ts, image_paths
 
