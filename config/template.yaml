@@ -145,7 +145,7 @@ blender_cameras: ${scene_dir}/cameras/blender.json
 scene_mesh_path: ${scene_dir}/scene.obj
 
 # wandb
-use_wandb: False
+use_wandb: True
 wandb_log_steps: 100
 wandb_log_hyperparameters: True
 wandb_log_conditioning_image: True
@@ -157,3 +157,6 @@ wandb_log_texture: True
 
 #rgb2x
 cache_dir: models/rgb2x_cache
+
+#conditioning image
+conditioning_image_format: png # png / exr (with exr tone-mapping may be off)

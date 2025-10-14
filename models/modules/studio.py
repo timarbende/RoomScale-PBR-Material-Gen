@@ -354,17 +354,17 @@ class Studio(nn.Module):
 
         features = self.render_func(features)
 
-        absolute_depth, relative_depth = self.get_relative_depth_map(fragments.zbuf)
+        # absolute_depth, relative_depth = self.get_relative_depth_map(fragments.zbuf)
 
-        return features, fragments, absolute_depth, relative_depth # (N, H, W, C)
+        return features, fragments # (N, H, W, C)
     
     def render(self, renderer, mesh, texture, background=None, background_texture=None, anchors=None, is_direct=False):
-        features, fragments, absolute_depth, rel_depth = self.render_features(renderer, mesh, texture, is_direct=is_direct, is_background=False, anchors=anchors)
+        features, fragments = self.render_features(renderer, mesh, texture, is_direct=is_direct, is_background=False, anchors=anchors)
 
         # blend background
         # NOTE there's no need to render background if no views see the background
         if background is not None and -1 in fragments.zbuf:
-            background_features, background_fragments, _, _ = self.render_features(renderer, background, background_texture, is_direct=is_direct, is_background=True, anchors=None)
+            background_features, background_fragments = self.render_features(renderer, background, background_texture, is_direct=is_direct, is_background=True, anchors=None)
 
             # blend rendering
             background_mask = fragments.zbuf == -1
@@ -376,4 +376,4 @@ class Studio(nn.Module):
             blend_zbuf = fragments.zbuf
             blend_zbuf[background_mask] = background_fragments.zbuf[background_mask]
 
-        return features, rel_depth
+        return features

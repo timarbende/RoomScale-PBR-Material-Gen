@@ -69,6 +69,9 @@ import cv2
 
 from PIL import Image
 
+'''
+texture pipeline for generated conditioning images, output aovs
+'''
 class TexturePipeline(nn.Module):
     def __init__(self, 
         config,
@@ -392,29 +395,10 @@ class TexturePipeline(nn.Module):
 
             t, noise, noisy_latents = self.guidance.add_noise_to_latents(latents, chosen_t, self.config.batch_size)
 
-            conditioning_image = None
-            if(image_path is not None):
-                if(self.config.conditioning_image_format == "exr"):
-                    full_path = os.path.join(self.config.scene_dir, image_path + ".exr")
-                    conditioning_image = cv2.imread(full_path, cv2.IMREAD_UNCHANGED)
-                    conditioning_image = cv2.cvtColor(conditioning_image, cv2.COLOR_BGR2RGB)
-                    conditioning_image = conditioning_image.astype(np.float32)
-                    conditioning_image = torch.from_numpy(conditioning_image).permute(2, 0, 1).unsqueeze(0).to(self.device)
-
-                if(self.config.conditioning_image_format == "png"):
-                    full_path = os.path.join(self.config.scene_dir, image_path + ".png")
-                    conditioning_image = torchvision.io.read_image(full_path, mode=torchvision.io.ImageReadMode.RGB)
-                    conditioning_image = conditioning_image / 255
-                    conditioning_image = conditioning_image.unsqueeze(0).to(self.device)
-
-
-            if(conditioning_image != None):
-                conditioning_image_log = conditioning_image
-                conditioning_image = self.normalize_image(conditioning_image)
-            
-                # scaling is also done in encode_latent_texture
-                conditioning_image = self.guidance.encode_latent_texture(conditioning_image)
-                conditioning_image = self.prepare_conditioning_image_input(conditioning_image)
+            conditioning_image = self.render_conditioning_image(cameras).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
+            conditioning_image_log = conditioning_image
+            conditioning_image = self.normalize_image(conditioning_image)
+            conditioning_image = conditioning_image.permute(0, 3, 1, 2)[:, 0:3, :, :]
 
             # compute loss
             self.texture_optimizer.zero_grad()
