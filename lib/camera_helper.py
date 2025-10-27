@@ -386,7 +386,35 @@ def init_3dfront_trajectory_from_blenderproc(trajectory, device):
 
     return Rs, Ts
 
-def init_fipt_blender_trajectory(trajectory, device):
+# read in camera transforms for kitchen_hq dataset
+def init_kitchen_hq_trajectory(trajectory, device):
+
+    Rs, Ts, image_paths = [], [], []
+    for frame in trajectory["frames"]:
+        image_paths.append(frame["file_path"])
+        c2w = torch.FloatTensor(frame["transform_matrix"]).to(device)
+
+        eye = c2w[:3, 3]
+        eye.unsqueeze_(0)
+
+        r = c2w[:3, :3]
+
+        up = torch.tensor([[0, 1, 0]], dtype=torch.float32, device=device) @ r.T
+        at = eye + torch.tensor([[0, 0, 1]], dtype=torch.float32, device=device) @ r.T
+
+        r, t = look_at_view_transform(
+            eye=eye,
+            at=at,
+            up=up
+        )
+
+        Rs.append(r)
+        Ts.append(t)
+
+    return Rs, Ts, image_paths
+
+# read in camera transforms for kitchen_hq dataset
+def init_scannet_trajectory(trajectory, device):
 
     Rs, Ts, image_paths = [], [], []
     for frame in trajectory["frames"]:
@@ -443,7 +471,7 @@ def init_camera_lookat(dist, elev, azim, image_size, device, fov=60, at=torch.Fl
 
     return cameras
 
-def init_camera_R_T(R, T, device, fov=60):
+def init_camera_R_T(R, T, device, fov=60, K=None):
     """init camera using R and T matrics
 
     Args:
@@ -455,6 +483,6 @@ def init_camera_R_T(R, T, device, fov=60):
         camera: PyTorch3D camera instance
     """
     
-    cameras = FoVPerspectiveCameras(R=R, T=T, device=device, fov=fov)
+    cameras = FoVPerspectiveCameras(R=R, T=T, device=device, fov=fov, K=K)
 
     return cameras

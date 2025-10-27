@@ -77,7 +77,7 @@ batch_size: 1
 verbose_mode: False
 
 # cameras
-camera_type: fipt # fipt / sphere / blenderproc / blender
+camera_type: scannet # scannet / kitchen_hq / sphere / blenderproc / blender
 use_random_cameras: False # False -> sample cameras in order, True -> sample cameras randomly
 
 # camera direction
@@ -136,13 +136,14 @@ prompt: "a bohemian style living room"
 a_prompt: best quality, high quality, extremely detailed, good geometry, high-res photo
 n_prompt: "" #TODO can we have n_prompt for albedo? #deformed, extra digit, fewer digits, cropped, worst quality, low quality, smoke, shading, lighting, lumination, shadow, text in image, watermarks
 
-scene_dir: data/kitchen_hq
+scene_dir: data/scannet
 scene_id: "93f59740-4b65-4e8b-8a0f-6420b339469d/room_4"
 scene_config_path: ${scene_dir}/${scene_id}/meshes/scene_config.json
 sphere_cameras: ${scene_dir}/cameras/sphere.yaml
 blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
 blender_cameras: ${scene_dir}/cameras/blender.json
-scene_mesh_path: ${scene_dir}/scene.obj
+custom_cameras: ${scene_dir}/psdf/transforms_all.json
+scene_mesh_path: ${scene_dir}/scans/mesh.ply
 frequency_texture_path: ${scene_dir}/train/frequency/frequency_texture.png
 
 # wandb

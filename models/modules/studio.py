@@ -13,7 +13,7 @@ from pytorch3d.ops import interpolate_face_attributes
 # customized
 import sys
 sys.path.append("./lib")
-from lib.camera_helper import init_trajectory, init_blender_trajectory, init_blenderproc_trajectory, init_fipt_blender_trajectory, init_camera_R_T, radian_to_degree
+from lib.camera_helper import init_trajectory, init_blender_trajectory, init_blenderproc_trajectory, init_scannet_trajectory, init_kitchen_hq_trajectory, init_camera_R_T, radian_to_degree
 from lib.render_helper import init_renderer
 from lib.shading_helper import init_flat_texel_shader
 
@@ -39,12 +39,50 @@ class Studio(nn.Module):
 
     def _init_camera_settings(self):
 
+        self.K = None
         self.Rs, self.Ts, self.fovs, self.image_paths = [], [], [], []
         self.inference_Rs, self.inference_Ts, self.inference_fovs = [], [], []
 
-        if self.config.camera_type == "fipt":
+        if self.config.camera_type == "scannet":
             poses = json.load(open(self.config.blender_cameras))
-            Rs, Ts, image_paths = init_fipt_blender_trajectory(poses, self.device)
+            
+            #intrinsic matrix
+            w = poses["w"]
+            h = poses["h"]
+            fl_x = poses["fl_x"]
+            fl_y = poses["fl_y"]
+            cx = poses["cx"]
+            cy = poses["cy"]
+            fx_norm = 2*fl_x / w
+            fy_norm = 2*fl_y / h
+            cx_norm = 2*cx / w - 1
+            cy_norm = 1 - 2*cy / h
+            self.K = torch.tensor([
+                [fx_norm, 0.0, cx_norm],
+                [0.0, fy_norm, cy_norm],
+                [0.0, 0.0, 1.0]
+            ], self.device)
+            
+            Rs, Ts, image_paths = init_scannet_trajectory(poses, self.device)
+            fovs = [self.config.fov] * len(Rs)
+
+            self.Rs += Rs
+            self.Ts += Ts
+            self.fovs += fovs
+            self.image_paths += image_paths
+
+            print("=> using {} scannet cameras for training".format(len(Rs)))
+
+            # inference cameras
+            if len(self.inference_Rs) == 0 and len(self.inference_Ts) == 0 and len(self.inference_fovs) == 0:
+                interval = len(self.Rs) // self.config.log_latents_views
+                self.inference_Rs = [r for i, r in enumerate(self.Rs) if i % interval == 0]
+                self.inference_Ts = [t for i, t in enumerate(self.Ts) if i % interval == 0]
+                self.infernece_fovs = [self.config.fov for _ in range(self.config.log_latents_views)]
+
+        if self.config.camera_type == "kitchen_hq":
+            poses = json.load(open(self.config.blender_cameras))
+            Rs, Ts, image_paths = init_kitchen_hq_trajectory(poses, self.device)
             fov_rad = poses["camera_angle_x"]
             fovs = [radian_to_degree(fov_rad)] * len(Rs)
 
@@ -53,7 +91,7 @@ class Studio(nn.Module):
             self.fovs += fovs
             self.image_paths += image_paths
 
-            print("=> using {} blender cameras for training".format(len(Rs)))
+            print("=> using {} kitchen_hq cameras for training".format(len(Rs)))
 
             # inference cameras
             if len(self.inference_Rs) == 0 and len(self.inference_Ts) == 0 and len(self.inference_fovs) == 0:
@@ -204,7 +242,7 @@ class Studio(nn.Module):
         self.anchor_func = anchor_func
 
     def set_cameras(self, R, T, fov):
-        return init_camera_R_T(R, T, self.device, fov)
+        return init_camera_R_T(R, T, self.device, fov, K=self.K)
     
     def set_renderer(self, camera, image_size):
         return init_renderer(camera,
@@ -220,7 +258,7 @@ class Studio(nn.Module):
         R, T, fov, idx, image_path = None, None, None, None, None
         if inference:
             idx = step % self.num_inference_cameras
-            R, T, fov = self.inference_Rs[idx], self.inference_Ts[idx], self.infernece_fovs[idx]
+            R, T, fov, image_path = self.inference_Rs[idx], self.inference_Ts[idx], self.infernece_fovs[idx], self.image_paths[idx]
         else:
 
             if random_cameras:
@@ -247,7 +285,7 @@ class Studio(nn.Module):
 
             steps = [cur_step] + next_steps
             for s in steps:
-                R, T, fov, idx, _ = self._sample_one_camera(s)
+                R, T, fov, idx, _= self._sample_one_camera(s)
                 Rs.append(R)
                 Ts.append(T)
                 fovs.append(fov)
@@ -257,7 +295,7 @@ class Studio(nn.Module):
             Ts = torch.cat(Ts, dim=0)
 
             return Rs, Ts, fovs, ids, image_paths
-
+    
     def get_uv_coordinates(self, mesh, fragments):
         xyzs = mesh.verts_padded() # (N, V, 3)
         faces = mesh.faces_padded() # (N, F, 3)

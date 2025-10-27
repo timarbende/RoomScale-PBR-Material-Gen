@@ -15,7 +15,7 @@ lt.monkey_patch()
 
 import sys
 sys.path.append(".")
-from models.pipeline.parametric_texture_pipeline import TexturePipeline
+from models.pipeline.parametric_texture_pipeline_frequency import TexturePipeline
 
 # Setup
 if torch.cuda.is_available():
