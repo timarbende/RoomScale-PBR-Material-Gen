@@ -25,59 +25,32 @@ else:
     print("no gpu avaiable")
     exit()
 
-def init_args():
+def init_config():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="config/optimize_texture.yaml")
-    parser.add_argument("--stamp", type=str, default=None)
-    parser.add_argument("--checkpoint_dir", type=str, default="")
-    parser.add_argument("--conditioning_texture_step", type=int, default=0)
-    parser.add_argument("--aov", type=str, default="")
-    parser.add_argument("--texture_size", type=int, default=4096)
-
-    # only with template
-    parser.add_argument("--log_dir", type=str, default="")
-    parser.add_argument("--prompt", type=str, default="")
-    parser.add_argument("--scene_id", type=str, default="", help="<house_id>/<room_id>")
-
     args = parser.parse_args()
 
-    if args.stamp is None:
-        setattr(args, "stamp", "{}_{}".format(datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), "debug"))
-
-    return args
-
-def init_config(args):
     config = OmegaConf.load(args.config)
-
-    config.aov=args.aov
-
-    # template
-    if len(args.log_dir) != 0 and len(args.prompt) != 0 and len(args.scene_id) != 0:
-        print("=> filling template with following arguments:")
-        print("   log_dir:", args.log_dir)
-        print("   prompt:", args.prompt)
-        print("   scene_id:", args.scene_id)
-
-        config.log_dir = args.log_dir
-        config.prompt = args.prompt
-        config.scene_id = args.scene_id
-
     return config
 
 
 def init_pipeline(
         config,
         stamp,
+        aov,
+        prompt,
         device=DEVICE,
         inference_mode=False
     ):
     pipeline = TexturePipeline(
         config=config,
         stamp=stamp,
-        device=device
+        device=device,
+        aov=aov,
+        prompt = prompt
     ).to(device)
 
-    pipeline.configure(inference_mode=inference_mode)
+    pipeline.configure()
 
     return pipeline
 
@@ -91,22 +64,30 @@ if __name__ == "__main__":
 
     torch.backends.cudnn.benchmark = True
 
-    args = init_args()
-
-    inference_mode = len(args.checkpoint_dir) > 0
-
     print("=> loading config file...")
-    config = init_config(args)
+    config = init_config()
 
-    print("=> initializing pipeline...")
-    pipeline = init_pipeline(config=config, stamp=args.stamp, inference_mode=inference_mode)
+    # TODO: inference_mode = hasattr(config, "checkpoint_dir") and len(config.checkpoint_dir) > 0
+    inference_mode = False
 
-    if not inference_mode:
-        print("=> start training...")
+    prompts = {
+            "albedo": "Albedo (diffuse basecolor)",
+            "normal": "Camera-space Normal",
+            "roughness": "Roughness",
+            "metallic": "Metallicness",
+            "irradiance": "Irradiance (diffuse lighting)",
+        }
+
+    stamp = "{}_{}".format(datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), "debug")
+
+    for aov in prompts.keys():
+        pipeline = init_pipeline(
+            config=config, 
+            stamp=stamp,
+            aov=aov,
+            prompt=prompts[aov],
+            inference_mode=inference_mode
+        )
+        print("=> start training", aov, "...")
         with torch.autograd.set_detect_anomaly(True):
             pipeline.fit()
-    else:
-        print("inference mode")
-        print("prompt:", config.prompt)
-        pipeline.load_checkpoint(args.checkpoint_dir, args.checkpoint_step)
-        pipeline.inference(args.checkpoint_dir, args.checkpoint_step, args.texture_size)

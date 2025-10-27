@@ -73,7 +73,9 @@ class TexturePipeline(nn.Module):
     def __init__(self, 
         config,
         stamp,
-        device
+        device,
+        aov,
+        prompt
     ): 
         
         super().__init__()
@@ -81,7 +83,8 @@ class TexturePipeline(nn.Module):
         self.config = config
         self.stamp = stamp
 
-        self.prompt = config.prompt + ", " + config.a_prompt if config.a_prompt else config.prompt
+        self.aov=aov
+        self.prompt = prompt
         self.n_prompt = config.n_prompt
         
         self.device = device
@@ -96,7 +99,7 @@ class TexturePipeline(nn.Module):
         if not inference_mode:
             self.log_name = "_".join(self.config.prompt.split(' '))
             self.log_stamp = self.stamp
-            self.log_dir = os.path.join(self.config.log_dir, self.log_name, self.config.loss_type, self.log_stamp)
+            self.log_dir = os.path.join(self.config.log_dir, self.aov, self.log_name, self.config.loss_type, self.log_stamp)
 
             # override config
             self.config.log_name = self.log_name
@@ -131,23 +134,22 @@ class TexturePipeline(nn.Module):
     def _init_mesh(self):
         self.texture_mesh = TextureMesh(self.config, self.device)
 
-        mesh = self.texture_mesh.mesh
+        if("frequency_texture_path" in self.config and
+            self.config.frequency_texture_path is not None
+           and os.path.exists(self.config.frequency_texture_path)):
+            
+            frequency_texture_img = Image.open(self.config.frequency_texture_path)
+            frequency_texture = torchvision.transforms.ToTensor()(frequency_texture_img).permute(1, 2, 0).cuda()
 
-        # if we want to get it programmatically, this is the path:
-        # os.path.join(self.config.log_dir, "texture_{}.png".format(20000))
-
-        conditioning_texture_path = os.path.join("outputs", "a_bohemian_style_living_room", "sds", "2025-06-26_16-34-01", "texture_20000.png")
-        img = Image.open(conditioning_texture_path)
-        convert_tensor = torchvision.transforms.ToTensor()
-        conditioning_texture = convert_tensor(img).permute(1, 2, 0).cuda()
+            mesh = self.texture_mesh.mesh
         
-        self.conditioning_mesh = mesh.clone()
-        self.conditioning_mesh.textures = TexturesUV(
-            maps=conditioning_texture[None, ...],  # B, H, W, C
-            faces_uvs= mesh.textures.faces_uvs_padded(),
-            verts_uvs= mesh.textures.verts_uvs_padded(),
-            sampling_mode="bilinear"
-        )
+            self.frequency_mesh = mesh.clone()
+            self.frequency_mesh.textures = TexturesUV(
+                maps=frequency_texture[None, ...],  # B, H, W, C
+                faces_uvs= mesh.textures.faces_uvs_padded(),
+                verts_uvs= mesh.textures.verts_uvs_padded(),
+                sampling_mode="bilinear"
+            )
 
     def _init_guidance(self):
         self.guidance = Guidance(self.config, self.device)
@@ -167,7 +169,7 @@ class TexturePipeline(nn.Module):
             wandb.login()
             wandb.init(
                 project="SceneTex",
-                name="kitchen_hq",
+                name="kitchen_hq_lr_1e-3_freq_sum_"+self.aov,
                 dir=self.log_dir
             )
         else:
@@ -368,13 +370,19 @@ class TexturePipeline(nn.Module):
         )
 
         return image_latents
+    
+    def render_frequency_view(self, cameras):
+        renderer = self.studio.set_renderer(cameras, self.config.render_size)
+
+        images, _ = renderer(self.frequency_mesh)
+        return images
 
     def fit(self):
         # the only 2 things different here than rgb2x are: textual inversion and conditional attention mask for encoding text prompt
 
         pbar = tqdm(self.guidance.chosen_ts)
 
-        self.guidance.init_text_embeddings(self.config.batch_size)
+        self.guidance.init_text_embeddings(prompt=self.prompt, batch_size=self.config.batch_size)
 
         for step, chosen_t in enumerate(pbar):
 
@@ -437,7 +445,16 @@ class TexturePipeline(nn.Module):
                     control=conditioning_image
                 )
 
-            sds_loss.backward()
+            if hasattr(self, "frequency_mesh") and self.frequency_mesh is not None:
+                weighting = self.render_frequency_view(cameras).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
+                sds_loss = sds_loss * (1 / (2 * weighting.permute(0, 3, 1, 2).clamp(1-6, 1))).clamp(0.1, 10)
+            
+            loss = sds_loss.sum()
+
+            #TODO: quantitative results
+            #TODO: scannet
+
+            loss.backward()
 
             '''TODO: uncomment this
             torch.nn.utils.clip_grad_norm_(self._get_texture_parameters(), 1e-1)
@@ -450,13 +467,13 @@ class TexturePipeline(nn.Module):
             
             if(self.config.use_wandb):
                 wandb.log({
-                    "train/sds_loss": sds_loss.item(),
+                    "train/sds_loss": loss.item(),
                 })
             
-            self.avg_loss_sds.append(sds_loss.item())
+            self.avg_loss_sds.append(loss.item())
             
             max_memory_allocated = torch.cuda.max_memory_allocated()
-            pbar.set_description(f'Loss: {sds_loss.item():.6f}, sampled t : {t.item()}, GPU: {max_memory_allocated / 1024**3:.2f} GB')
+            pbar.set_description(f'Loss: {loss.item():.6f}, sampled t : {t.item()}, GPU: {max_memory_allocated / 1024**3:.2f} GB')
 
             if step % self.config.local_log_steps == 0 and self.config.use_local_log:
                 # save texture field
@@ -497,7 +514,7 @@ class TexturePipeline(nn.Module):
                 if self.config.wandb_log_denoised_latents:
                     renderings = []
                     for view_id in range(self.config.log_latents_views):
-                        Rs, Ts, fovs, _, _ = self.studio.sample_cameras(view_id, 1, inference=True)
+                        Rs, Ts, fovs, _, _ = self.studio.sample_cameras(view_id, 1, random_cameras=False, inference=False)
                         cameras = self.studio.set_cameras(Rs, Ts, fovs)
 
                         if self.config.texture_type == "latent":
@@ -543,14 +560,34 @@ class TexturePipeline(nn.Module):
 
                 wandb.log(wandb_log)
 
-    # helper function to check all camera views
+        self.render_all_views()
+
+        self.save_texture()
+
+        wandb.finish()
+
     def render_all_views(self):
-        cameras_count = 5000
+        directory = "{}_results".format(self.aov)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        cameras_count = self.studio.num_cameras
         
         for camera_id in range(cameras_count):
-            Rs, Ts, fovs, ids, _ = self.studio.sample_cameras(camera_id, self.config.batch_size, random_cameras=False)            
+            Rs, Ts, fovs, _, image_path = self.studio.sample_cameras(camera_id, self.config.batch_size, random_cameras=False)            
             cameras = self.studio.set_cameras(Rs, Ts, fovs)
 
-            conditioning_image = self.render_conditioning_image(cameras).permute(0, 3, 1, 2)
-            conditioning_image = torchvision.transforms.ToPILImage()(conditioning_image[0])
-            conditioning_image.save("ftip_camera_{}.png".format(camera_id))
+            _, features = self.forward(cameras, inference=True, downsample=False, is_direct=True)
+
+            image = torchvision.transforms.ToPILImage()(features.squeeze(0))
+            path = os.path.join(directory, "{}.png".format(image_path.split("/")[-1]))
+            image.save(path)
+
+    def save_texture(self):
+        directory = "{}_results".format(self.aov)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        
+        decoded_texture = (self.texture_mesh.texture / 2 + 0.5).clamp(0, 1)
+        decoded_texture = torchvision.transforms.ToPILImage()(decoded_texture[0].permute(2, 0, 1)).convert("RGB")
+        decoded_texture.save(os.path.join(directory, "{}_texture.png".format(self.aov)))

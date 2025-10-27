@@ -4,7 +4,7 @@ guidance_scale_phi: 1.0
 image_guidance_scale: 1.0
 phi_scale: 1.0
 grad_scale: 1.0
-latent_lr: 1e-2
+latent_lr: 1e-3
 latent_wd: 0
 phi_lr: 1e-4
 latent_encoder_lr: 3e-2
@@ -33,7 +33,7 @@ mesh_init: scene_obj # scene_obj / scene_config
 
 # logging
 use_local_log: False
-local_log_steps: 1000
+local_log_steps: 100
 show_original_texture: False
 show_visible_texels: False
 show_rgb_gt: False
@@ -70,7 +70,7 @@ azim: [-180, 180]
 
 # training
 seed: 42
-num_steps: 30000
+num_steps: 17000
 num_anneal_steps: 5000
 log_latents_views: 10
 batch_size: 1
@@ -130,22 +130,23 @@ dummy_texture_path: samples/textures/dummy.png
 label_path: samples/scene/label.png
 background: samples/primitives/cube.obj
 
-log_dir: "" # TODO
+log_dir: "outputs"
 
-prompt: "" # TODO
+prompt: "a bohemian style living room"
 a_prompt: best quality, high quality, extremely detailed, good geometry, high-res photo
 n_prompt: "" #TODO can we have n_prompt for albedo? #deformed, extra digit, fewer digits, cropped, worst quality, low quality, smoke, shading, lighting, lumination, shadow, text in image, watermarks
 
 scene_dir: data/kitchen_hq
-scene_id: "" # TODO <house_id>/<room_id>
+scene_id: "93f59740-4b65-4e8b-8a0f-6420b339469d/room_4"
 scene_config_path: ${scene_dir}/${scene_id}/meshes/scene_config.json
 sphere_cameras: ${scene_dir}/cameras/sphere.yaml
 blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
 blender_cameras: ${scene_dir}/cameras/blender.json
 scene_mesh_path: ${scene_dir}/scene.obj
+frequency_texture_path: ${scene_dir}/train/frequency/frequency_texture.png
 
 # wandb
-use_wandb: True
+wandb: True
 wandb_log_steps: 100
 wandb_log_hyperparameters: True
 wandb_log_conditioning_image: True

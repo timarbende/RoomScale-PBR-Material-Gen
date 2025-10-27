@@ -23,15 +23,6 @@ class Guidance(nn.Module):
         self.config = config
         self.device = device
 
-        self.aov= config.aov
-        prompts = {
-            "albedo": "Albedo (diffuse basecolor)",
-            "normal": "Camera-space Normal",
-            "roughness": "Roughness",
-            "metallic": "Metallicness",
-            "irradiance": "Irradiance (diffuse lighting)",
-        }
-        self.prompt=prompts[self.aov]
         self.n_prompt = config.n_prompt
         
         self.weights_dtype = torch.float16 if self.config.enable_half_precision else torch.float32
@@ -133,10 +124,10 @@ class Guidance(nn.Module):
         # Return the list of chosen time steps
         self.chosen_ts = chosen_ts
 
-    def init_text_embeddings(self, batch_size):
+    def init_text_embeddings(self, prompt, batch_size):
         ### get text embedding
         text_inputs = self.tokenizer(
-            self.prompt, 
+            prompt, 
             padding="max_length", 
             max_length=self.tokenizer.model_max_length, 
             truncation=True, 
@@ -327,9 +318,12 @@ class Guidance(nn.Module):
             x0 = self.vae.decode(x0).sample
             x0 = (x0 / 2 + 0.5).clamp(0, 1)
 
-        loss = F.mse_loss(not_encoded_latents, x0, reduction="mean")
+        loss = F.mse_loss(not_encoded_latents, x0, reduction="none")
 
         return loss, x0
+    
+    def compute_frequency_loss(self, latents):
+        return 0.5 * F.mse_loss(latents, (latents + 1).detach(), reduction="sum")
     
     def encode_image(self, image):
         # this line only works for singular batch. for batch with multiple elements check rgb2x prepare_image_latents
