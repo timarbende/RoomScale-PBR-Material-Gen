@@ -12,6 +12,8 @@ from pytorch3d.renderer import (
     look_at_rotation,
 )
 
+from pytorch3d.utils import cameras_from_opencv_projection
+
 # customized
 import sys
 sys.path.append(".")
@@ -414,29 +416,65 @@ def init_kitchen_hq_trajectory(trajectory, device):
     return Rs, Ts, image_paths
 
 # read in camera transforms for kitchen_hq dataset
-def init_scannet_trajectory(trajectory, device):
+def init_scannet_trajectory(trajectory):
 
     Rs, Ts, image_paths = [], [], []
     for frame in trajectory["frames"]:
         image_paths.append(frame["file_path"])
-        c2w = torch.FloatTensor(frame["transform_matrix"]).to(device)
+        transform = torch.FloatTensor(frame["transform_matrix"])
 
-        eye = c2w[:3, 3]
-        eye.unsqueeze_(0)
+        
+        transform[:3, 0] *= -1
+        transform[:3, 2] *= -1
+        
 
-        r = c2w[:3, :3]
+        '''
+        transform[:3, 1:3] *= -1
+        '''
+        '''
+        transform[0, :3] *= -1
+        transform[2, :3] *= -1
+        '''
+        '''
+        transform[1:2, :3] *= -1
+        '''
 
-        up = torch.tensor([[0, 1, 0]], dtype=torch.float32, device=device) @ r.T
-        at = eye + torch.tensor([[0, 0, 1]], dtype=torch.float32, device=device) @ r.T
+        eye = transform[:3, 3].unsqueeze(0)
 
-        r, t = look_at_view_transform(
+        r = transform[:3, :3]
+
+        up = torch.tensor([[0, 1, 0]], dtype=torch.float32) @ r.T
+        at = eye + torch.tensor([[0, 0, 1]], dtype=torch.float32) @ r.T
+
+        R, T = look_at_view_transform(
             eye=eye,
             at=at,
             up=up
         )
 
-        Rs.append(r)
-        Ts.append(t)
+        R = R.squeeze(0)
+
+        '''
+        R[:3, 0] *= -1
+        R[:3, 2] *= -1
+        '''
+
+        '''
+        R[:3, 1:3] *= -1
+        '''
+        '''
+        R[0, :3] *= -1
+        R[2, :3] *= -1
+        '''
+        
+        '''
+        transform[1:2, :3] *= -1
+        '''
+
+        R = R.unsqueeze(0)
+
+        Rs.append(R)
+        Ts.append(T)
 
     return Rs, Ts, image_paths
 
@@ -471,7 +509,7 @@ def init_camera_lookat(dist, elev, azim, image_size, device, fov=60, at=torch.Fl
 
     return cameras
 
-def init_camera_R_T(R, T, device, fov=60, K=None):
+def init_camera_R_T(R, T, device, focal_length, principal_point, image_size):
     """init camera using R and T matrics
 
     Args:
@@ -482,7 +520,18 @@ def init_camera_R_T(R, T, device, fov=60, K=None):
     Returns:
         camera: PyTorch3D camera instance
     """
-    
-    cameras = FoVPerspectiveCameras(R=R, T=T, device=device, fov=fov, K=K)
+
+    # this is for scannet++ setup
+    cameras = PerspectiveCameras(
+        R=R, 
+        T=T,
+        device=device,
+        principal_point=principal_point,
+        focal_length=focal_length,
+        image_size=image_size
+    )
+
+    # this is for kitchen_hq and generated data
+    #cameras = FoVPerspectiveCameras(R=R, T=T, device=device, znear=1e-5, fov=84.5)
 
     return cameras

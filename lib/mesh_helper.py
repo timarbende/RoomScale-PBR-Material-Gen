@@ -21,6 +21,7 @@ from pytorch3d.structures import (
 )
 from pytorch3d.io import (
     load_obj,
+    load_ply,
     load_objs_as_meshes
 )
 from pytorch3d.renderer import TexturesAtlas
@@ -703,4 +704,15 @@ def init_scene_obj(scene_mesh_path, device):
         "verts": verts,
         "faces": faces,
         "aux": aux,
+    }
+
+def init_scene_ply(scene_mesh_path):
+    verts, faces = load_ply(scene_mesh_path)
+    mesh = Meshes(verts=[verts], faces=[faces])
+
+    return {
+        "mesh": mesh,
+        "verts": verts,
+        "faces": faces,
+        "aux": None,
     }

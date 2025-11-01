@@ -327,6 +327,8 @@ class TexturePipeline(nn.Module):
         not_encoded_latents = latents
         not_encoded_latents = (not_encoded_latents / 2 + 0.5).clamp(0, 1)
 
+        #TODO: downsize latents
+
         if downsample:
             if self.config.downsample == "vae":
                 latents = self.guidance.encode_latent_texture(latents, self.config.deterministic_vae_encoding)
@@ -423,6 +425,8 @@ class TexturePipeline(nn.Module):
                 # scaling is also done in encode_latent_texture
                 conditioning_image = self.guidance.encode_latent_texture(conditioning_image)
                 conditioning_image = self.prepare_conditioning_image_input(conditioning_image)
+
+                # downsize conditioning_image to 768*height
 
             # compute loss
             self.texture_optimizer.zero_grad()

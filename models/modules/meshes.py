@@ -15,7 +15,7 @@ from pytorch3d.renderer import TexturesUV
 
 import sys
 sys.path.append("./lib")
-from lib.mesh_helper import init_multiple_meshes_xatlas, init_multiple_meshes_as_scene, init_background, init_scene_obj
+from lib.mesh_helper import init_multiple_meshes_xatlas, init_multiple_meshes_as_scene, init_background, init_scene_obj, init_scene_ply
 from lib.build_instance_map import build_instance_map
 
 sys.path.append("./models")
@@ -84,6 +84,11 @@ class TextureMesh(nn.Module):
             self.mesh_dict = init_scene_obj(
                 scene_mesh_path= self.config.scene_mesh_path,
                 device=self.device
+            )
+
+        elif self.config.mesh_init == "scene_ply":
+            self.mesh_dict = init_scene_ply(
+                scene_mesh_path= self.config.scene_mesh_path,
             )
 
         self.mesh, self.texture = self._init_texture(self.mesh_dict)

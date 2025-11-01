@@ -29,7 +29,7 @@ enable_vae_patch_decoding: False
 use_background: False # add a pseudo background
 enable_clip_benchmark: True
 load_lora_weights: ""
-mesh_init: scene_obj # scene_obj / scene_config
+mesh_init: scene_obj # scene_ply / scene_obj / scene_config
 
 # logging
 use_local_log: False
@@ -143,7 +143,7 @@ sphere_cameras: ${scene_dir}/cameras/sphere.yaml
 blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
 blender_cameras: ${scene_dir}/cameras/blender.json
 custom_cameras: ${scene_dir}/psdf/transforms_all.json
-scene_mesh_path: ${scene_dir}/scans/mesh.ply
+scene_mesh_path: ${scene_dir}/psdf/mesh/textured/mesh.obj
 frequency_texture_path: ${scene_dir}/train/frequency/frequency_texture.png
 
 # wandb

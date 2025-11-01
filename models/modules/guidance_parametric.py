@@ -318,7 +318,12 @@ class Guidance(nn.Module):
             x0 = self.vae.decode(x0).sample
             x0 = (x0 / 2 + 0.5).clamp(0, 1)
 
+            #TODO: if metallic or roughness, repeat first channel (see rgbx pipeline)
+            #TODO: upsize x0 to not_encoded_latents size (1024*682)
+
         loss = F.mse_loss(not_encoded_latents, x0, reduction="none")
+
+        #TODO: 0 pixels by random mask
 
         return loss, x0
     

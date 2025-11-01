@@ -39,36 +39,37 @@ class Studio(nn.Module):
 
     def _init_camera_settings(self):
 
-        self.K = None
         self.Rs, self.Ts, self.fovs, self.image_paths = [], [], [], []
         self.inference_Rs, self.inference_Ts, self.inference_fovs = [], [], []
+        self.w, self.h = None, None
 
         if self.config.camera_type == "scannet":
-            poses = json.load(open(self.config.blender_cameras))
+            poses = json.load(open(self.config.custom_cameras))
             
             #intrinsic matrix
             w = poses["w"]
             h = poses["h"]
-            fl_x = poses["fl_x"]
-            fl_y = poses["fl_y"]
+            self.image_size=torch.tensor([[h, w]], dtype=torch.float32)
+            fx = poses["fl_x"]
+            fy = poses["fl_y"]
+            self.focal_length = torch.tensor([[fx, fy]])
             cx = poses["cx"]
             cy = poses["cy"]
-            fx_norm = 2*fl_x / w
-            fy_norm = 2*fl_y / h
-            cx_norm = 2*cx / w - 1
-            cy_norm = 1 - 2*cy / h
-            self.K = torch.tensor([
-                [fx_norm, 0.0, cx_norm],
-                [0.0, fy_norm, cy_norm],
-                [0.0, 0.0, 1.0]
-            ], self.device)
+            self.principal_point = torch.tensor([[cx, cy]])
+
+            image_size_wh = self.image_size.flip(dims=(1,))
+            scale = image_size_wh.min(dim=1, keepdim=True)[0] / 2.0
+            scale = scale.expand(-1, 2)
+            c0 = image_size_wh / 2.0
+
+            # Get the PyTorch3D focal length and principal point.
+            self.focal_length = self.focal_length / scale
+            self.principal_point = -(self.principal_point - c0) / scale
             
-            Rs, Ts, image_paths = init_scannet_trajectory(poses, self.device)
-            fovs = [self.config.fov] * len(Rs)
+            Rs, Ts, image_paths = init_scannet_trajectory(poses)
 
             self.Rs += Rs
             self.Ts += Ts
-            self.fovs += fovs
             self.image_paths += image_paths
 
             print("=> using {} scannet cameras for training".format(len(Rs)))
@@ -242,7 +243,7 @@ class Studio(nn.Module):
         self.anchor_func = anchor_func
 
     def set_cameras(self, R, T, fov):
-        return init_camera_R_T(R, T, self.device, fov, K=self.K)
+        return init_camera_R_T(R, T, self.device, self.focal_length, self.principal_point, self.image_size)
     
     def set_renderer(self, camera, image_size):
         return init_renderer(camera,
@@ -414,4 +415,4 @@ class Studio(nn.Module):
             blend_zbuf = fragments.zbuf
             blend_zbuf[background_mask] = background_fragments.zbuf[background_mask]
 
-        return features
+        return features, fragments
