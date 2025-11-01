@@ -46,7 +46,9 @@ class Studio(nn.Module):
         if self.config.camera_type == "scannet":
             poses = json.load(open(self.config.custom_cameras))
             
-            #intrinsic matrix
+            # intrinsic matrix
+            # normalization based on pytorch3d camera_conversions.py
+            # (https://github.com/facebookresearch/pytorch3d/blob/main/pytorch3d/renderer/camera_conversions.py)
             w = poses["w"]
             h = poses["h"]
             self.image_size=torch.tensor([[h, w]], dtype=torch.float32)
