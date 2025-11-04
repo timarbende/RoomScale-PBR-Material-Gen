@@ -322,7 +322,7 @@ class TexturePipeline(nn.Module):
 
         anchors = self.texture_mesh.instance_anchors if self.config.enable_anchor_embedding else None
  
-        latents = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
+        latents, _ = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
         latents = latents.permute(0, 3, 1, 2)
         
         not_encoded_latents = latents

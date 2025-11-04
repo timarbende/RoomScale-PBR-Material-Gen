@@ -41,7 +41,7 @@ class Studio(nn.Module):
 
         self.Rs, self.Ts, self.fovs, self.image_paths = [], [], [], []
         self.inference_Rs, self.inference_Ts, self.inference_fovs = [], [], []
-        self.w, self.h = None, None
+        self.focal_length, self.principal_point, self.image_size = None, None, None
 
         if self.config.camera_type == "scannet":
             poses = json.load(open(self.config.custom_cameras))
@@ -84,7 +84,7 @@ class Studio(nn.Module):
                 self.infernece_fovs = [self.config.fov for _ in range(self.config.log_latents_views)]
 
         if self.config.camera_type == "kitchen_hq":
-            poses = json.load(open(self.config.blender_cameras))
+            poses = json.load(open(self.config.custom_cameras))
             Rs, Ts, image_paths = init_kitchen_hq_trajectory(poses, self.device)
             fov_rad = poses["camera_angle_x"]
             fovs = [radian_to_degree(fov_rad)] * len(Rs)
@@ -244,8 +244,17 @@ class Studio(nn.Module):
 
         self.anchor_func = anchor_func
 
-    def set_cameras(self, R, T, fov):
-        return init_camera_R_T(R, T, self.device, self.focal_length, self.principal_point, self.image_size)
+    def set_cameras(self, camera_type, R, T, fov):
+        return init_camera_R_T(
+            R, 
+            T, 
+            self.device,
+            camera_type,
+            self.focal_length, 
+            self.principal_point,
+            self.image_size,
+            fov
+        )
     
     def set_renderer(self, camera, image_size):
         return init_renderer(camera,

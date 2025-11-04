@@ -1,1 +1,0 @@
-python scripts/train_texture_parametric.py --config config/template.yaml

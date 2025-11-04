@@ -422,22 +422,9 @@ def init_scannet_trajectory(trajectory):
     for frame in trajectory["frames"]:
         image_paths.append(frame["file_path"])
         transform = torch.FloatTensor(frame["transform_matrix"])
-
         
         transform[:3, 0] *= -1
         transform[:3, 2] *= -1
-        
-
-        '''
-        transform[:3, 1:3] *= -1
-        '''
-        '''
-        transform[0, :3] *= -1
-        transform[2, :3] *= -1
-        '''
-        '''
-        transform[1:2, :3] *= -1
-        '''
 
         eye = transform[:3, 3].unsqueeze(0)
 
@@ -451,27 +438,6 @@ def init_scannet_trajectory(trajectory):
             at=at,
             up=up
         )
-
-        R = R.squeeze(0)
-
-        '''
-        R[:3, 0] *= -1
-        R[:3, 2] *= -1
-        '''
-
-        '''
-        R[:3, 1:3] *= -1
-        '''
-        '''
-        R[0, :3] *= -1
-        R[2, :3] *= -1
-        '''
-        
-        '''
-        transform[1:2, :3] *= -1
-        '''
-
-        R = R.unsqueeze(0)
 
         Rs.append(R)
         Ts.append(T)
@@ -509,7 +475,7 @@ def init_camera_lookat(dist, elev, azim, image_size, device, fov=60, at=torch.Fl
 
     return cameras
 
-def init_camera_R_T(R, T, device, focal_length, principal_point, image_size):
+def init_camera_R_T(R, T, device, camera_type, focal_length, principal_point, image_size, fov):
     """init camera using R and T matrics
 
     Args:
@@ -521,17 +487,18 @@ def init_camera_R_T(R, T, device, focal_length, principal_point, image_size):
         camera: PyTorch3D camera instance
     """
 
+    if(camera_type == "scannet"):
     # this is for scannet++ setup
-    cameras = PerspectiveCameras(
-        R=R, 
-        T=T,
-        device=device,
-        principal_point=principal_point,
-        focal_length=focal_length,
-        image_size=image_size
-    )
+        cameras = PerspectiveCameras(
+            R=R, 
+            T=T,
+            device=device,
+            principal_point=principal_point,
+            focal_length=focal_length,
+            image_size=image_size
+        )
 
-    # this is for kitchen_hq and generated data
-    #cameras = FoVPerspectiveCameras(R=R, T=T, device=device, znear=1e-5, fov=84.5)
+    else:
+        cameras = FoVPerspectiveCameras(R=R, T=T, device=device, fov=fov)
 
     return cameras

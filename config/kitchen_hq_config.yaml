@@ -15,7 +15,7 @@ rgb_scale: 0
 mv_scale: 0
 mv_apply_step: 0
 
-texture_init: zeros # zeros, random
+texture_init: origin # origin / random; init with origin: on roughness means init with 1, on metallic with -1 and on other aovs with 0 in -1, 1 normalized space
 use_different_t: True
 use_lr_scheduler: False
 phi_v_prediction: False # FIXME v_prediction is still buggy 
@@ -77,7 +77,7 @@ batch_size: 1
 verbose_mode: False
 
 # cameras
-camera_type: scannet # scannet / kitchen_hq / sphere / blenderproc / blender
+camera_type: kitchen_hq # scannet / kitchen_hq / sphere / blenderproc / blender
 use_random_cameras: False # False -> sample cameras in order, True -> sample cameras randomly
 
 # camera direction
@@ -136,23 +136,23 @@ prompt: "a bohemian style living room"
 a_prompt: best quality, high quality, extremely detailed, good geometry, high-res photo
 n_prompt: "" #TODO can we have n_prompt for albedo? #deformed, extra digit, fewer digits, cropped, worst quality, low quality, smoke, shading, lighting, lumination, shadow, text in image, watermarks
 
-scene_dir: data/scannet
+scene_dir: data/kitchen_hq
 scene_id: "93f59740-4b65-4e8b-8a0f-6420b339469d/room_4"
 scene_config_path: ${scene_dir}/${scene_id}/meshes/scene_config.json
 sphere_cameras: ${scene_dir}/cameras/sphere.yaml
 blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
 blender_cameras: ${scene_dir}/cameras/blender.json
-custom_cameras: ${scene_dir}/psdf/transforms_all.json
-scene_mesh_path: ${scene_dir}/psdf/mesh/textured/mesh.obj
+custom_cameras: ${scene_dir}/cameras/blender.json
+scene_mesh_path: ${scene_dir}/scene.obj
 frequency_texture_path: ${scene_dir}/train/frequency/frequency_texture.png
 
 # wandb
-wandb: True
+use_wandb: False
 wandb_log_steps: 100
 wandb_log_hyperparameters: True
 wandb_log_conditioning_image: True
 wandb_log_denoised_latents: True
-wandb_log_pred_original_sample: True
+wandb_log_pred_original_sample: False
 wandb_log_noisy_latents: False
 wandb_log_not_encoded_latents: False
 wandb_log_texture: True

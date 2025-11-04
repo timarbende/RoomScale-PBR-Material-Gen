@@ -139,7 +139,7 @@ class TextureMesh(nn.Module):
             )
 
         else:
-            if self.config.texture_init == "zeros":
+            if self.config.texture_init == "origin":
                 texture = torch.zeros((
                     1, 
                     self.config.latent_texture_size, 

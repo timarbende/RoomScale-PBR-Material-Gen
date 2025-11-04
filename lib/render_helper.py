@@ -27,8 +27,7 @@ from lib.shading_helper import (
 
 
 def init_renderer(camera, shader, image_size, faces_per_pixel):
-    #TODO: reset image_size
-    raster_settings = RasterizationSettings(image_size=(682, 1024), faces_per_pixel=faces_per_pixel)
+    raster_settings = RasterizationSettings(image_size=image_size, faces_per_pixel=faces_per_pixel)
     renderer = MeshRendererWithFragments(
         rasterizer=MeshRasterizer(
             cameras=camera,

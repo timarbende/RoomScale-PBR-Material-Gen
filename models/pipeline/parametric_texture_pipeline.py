@@ -69,23 +69,20 @@ import cv2
 
 from PIL import Image
 
+from datetime import datetime
+
 class TexturePipeline(nn.Module):
     def __init__(self, 
         config,
         stamp,
-        device,
-        aov,
-        prompt
+        device
     ): 
         
         super().__init__()
 
         self.config = config
-        self.stamp = stamp
 
-        self.aov=aov
-        self.prompt = prompt
-        self.n_prompt = config.n_prompt
+        self.stamp = stamp
         
         self.device = device
         self.weights_dtype = torch.float16 if self.config.enable_half_precision else torch.float32
@@ -96,17 +93,8 @@ class TexturePipeline(nn.Module):
 
     """call this after to(device)"""
     def configure(self, inference_mode=False):
-        if not inference_mode:
-            self.log_name = "_".join(self.config.prompt.split(' '))
-            self.log_stamp = self.stamp
-            self.log_dir = os.path.join(self.config.log_dir, self.aov, self.log_name, self.config.loss_type, self.log_stamp)
 
-            # override config
-            self.config.log_name = self.log_name
-            self.config.log_stamp = self.log_stamp
-            self.config.log_dir = self.log_dir
-
-            print("Using {}-space loss".format(self.config.loss_space))
+        print("Using {}-space loss".format(self.config.loss_space))
 
         # 3D assets
         self._init_mesh()
@@ -161,7 +149,7 @@ class TexturePipeline(nn.Module):
             self.studio.init_anchor_func(self.texture_mesh.num_instances)
 
     def _init_logger(self):
-        os.makedirs(self.log_dir, exist_ok=True)
+        #os.makedirs(self.config.log_dir, exist_ok=True)
 
         model_type = "controlnet" if "controlnet" in self.config.diffusion_type else "SD"
 
@@ -169,14 +157,16 @@ class TexturePipeline(nn.Module):
             wandb.login()
             wandb.init(
                 project="SceneTex",
-                name="kitchen_hq_lr_1e-3_freq_sum_"+self.aov,
-                dir=self.log_dir
+                name="kitchen_hq_new_init_{}_{}".format(self.config.aov, datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
+                #dir=self.config.log_dir
             )
         else:
             print("Not using WandB (set use_wandb to True in template.yaml to enable it)")
 
+        '''
         with open(os.path.join(self.log_dir, "config.yaml"), "w") as f:
             OmegaConf.save(config=self.config, f=f)
+        '''
 
         if(self.config.use_wandb and self.config.wandb_log_hyperparameters):
             wandb.log({
@@ -321,13 +311,13 @@ class TexturePipeline(nn.Module):
 
         anchors = self.texture_mesh.instance_anchors if self.config.enable_anchor_embedding else None
  
-        latents = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
+        latents, _ = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
         latents = latents.permute(0, 3, 1, 2)
         
+        #TODO: downsize latents to also 768 * 512
+
         not_encoded_latents = latents
         not_encoded_latents = (not_encoded_latents / 2 + 0.5).clamp(0, 1)
-
-        #TODO: downsize latents
 
         if downsample:
             if self.config.downsample == "vae":
@@ -384,14 +374,14 @@ class TexturePipeline(nn.Module):
 
         pbar = tqdm(self.guidance.chosen_ts)
 
-        self.guidance.init_text_embeddings(prompt=self.prompt, batch_size=self.config.batch_size)
+        self.guidance.init_text_embeddings(prompt=self.config.prompt, batch_size=self.config.batch_size)
 
         for step, chosen_t in enumerate(pbar):
 
             wandb_log = {}
 
             Rs, Ts, fovs, ids, image_path = self.studio.sample_cameras(step, self.config.batch_size, self.config.use_random_cameras) 
-            cameras = self.studio.set_cameras(Rs, Ts, fovs)
+            cameras = self.studio.set_cameras(self.config.camera_type, Rs, Ts, fovs)
 
             latents, not_encoded_latents = self.forward(cameras, is_direct=("hashgrid" not in self.config.texture_type))
 
@@ -426,7 +416,8 @@ class TexturePipeline(nn.Module):
                 conditioning_image = self.guidance.encode_latent_texture(conditioning_image)
                 conditioning_image = self.prepare_conditioning_image_input(conditioning_image)
 
-                # downsize conditioning_image to 768*height
+                # downsize conditioning_image to 768*height (height also needs to be divisible by 8)
+                # actually it's 768 * 512
 
             # compute loss
             self.texture_optimizer.zero_grad()
@@ -451,12 +442,11 @@ class TexturePipeline(nn.Module):
 
             if hasattr(self, "frequency_mesh") and self.frequency_mesh is not None:
                 weighting = self.render_frequency_view(cameras).to(device=self.device, dtype=self.guidance.text_embeddings.dtype)
-                sds_loss = sds_loss * (1 / (2 * weighting.permute(0, 3, 1, 2).clamp(1-6, 1))).clamp(0.1, 10)
+                weighting = (1 / (2 * weighting.permute(0, 3, 1, 2).clamp(1-6, 1))).clamp(0.1, 10)
+                # TODO: log weighting (with clamp(0, 1)) (if too bright, try manual normalization)
+                sds_loss = sds_loss * weighting
             
             loss = sds_loss.sum()
-
-            #TODO: quantitative results
-            #TODO: scannet
 
             loss.backward()
 
@@ -493,10 +483,12 @@ class TexturePipeline(nn.Module):
                 if self.config.enable_anchor_embedding: 
                     checkpoint["anchor_func"] = self.studio.anchor_func.state_dict()
 
+                ''' TODO: do we need checkpoint logging?
                 torch.save(
                     checkpoint,
                     os.path.join(self.log_dir, "checkpoint_{}.pth".format(step))
                 )
+                '''
 
                 # visualize
                 if self.config.show_original_texture:
@@ -519,7 +511,7 @@ class TexturePipeline(nn.Module):
                     renderings = []
                     for view_id in range(self.config.log_latents_views):
                         Rs, Ts, fovs, _, _ = self.studio.sample_cameras(view_id, 1, random_cameras=False, inference=False)
-                        cameras = self.studio.set_cameras(Rs, Ts, fovs)
+                        cameras = self.studio.set_cameras(self.config.camera_type, Rs, Ts, fovs)
 
                         if self.config.texture_type == "latent":
                                 with torch.no_grad():
@@ -530,6 +522,8 @@ class TexturePipeline(nn.Module):
                                 latents, _ = self.forward(cameras, False, False, is_direct=("hashgrid" not in self.config.texture_type))
                                 latents = (latents / 2 + 0.5).clamp(0, 1)
                         
+                        if(self.config.aov == "roughness" or self.config.aov == "metallic"):  # on roughness and metallic only take first channel (rgbx convention)
+                            latents = latents[:, 0:1].repeat(1, 3, 1, 1)
                         latents_image = torchvision.transforms.ToPILImage()(latents[0]).convert("RGB").resize((self.config.decode_size, self.config.decode_size))
                         renderings.append(wandb.Image(latents_image))
 
@@ -543,13 +537,19 @@ class TexturePipeline(nn.Module):
                     wandb_log["conditioning image"] = wandb_conditioning_rendering
 
                 if self.config.wandb_log_pred_original_sample and x0 is not None:
-                    x0_log = torchvision.transforms.ToPILImage()(x0[0]).convert("RGB")
+                    x0_log = x0
+                    if(self.config.aov == "roughness" or self.config.aov == "metallic"):  # on roughness and metallic only take first channel (rgbx convention)
+                            x0_log = x0_log[:, 0:1].repeat(1, 3, 1, 1)
+                    x0_log = torchvision.transforms.ToPILImage()(x0_log[0]).convert("RGB")
                     wandb_x0_rendering = wandb.Image(x0_log)
                     wandb_log["original sample predicate"] = wandb_x0_rendering
 
                 if self.config.wandb_log_noisy_latents:
                     with torch.no_grad():
-                        noisy_latents_log = 1 / self.guidance.vae.config.scaling_factor * noisy_latents
+                        noisy_latents_log = noisy_latents
+                        if(self.config.aov == "roughness" or self.config.aov == "metallic"):  # on roughness and metallic only take first channel (rgbx convention)
+                            noisy_latents_log = noisy_latents_log[:, 0:1].repeat(1, 3, 1, 1)
+                        noisy_latents_log = 1 / self.guidance.vae.config.scaling_factor * noisy_latents_log
                         noisy_latents_log = self.guidance.vae.decode(noisy_latents_log.contiguous()).sample # B, 3, H, W
                         noisy_latents_log = (noisy_latents_log / 2 + 0.5).clamp(0, 1)
                         noisy_latents_log = torchvision.transforms.ToPILImage()(noisy_latents_log[0]).convert("RGB")
@@ -557,21 +557,27 @@ class TexturePipeline(nn.Module):
                         wandb_log["noisy latents"] = wandb_noisy_latents_rendering
 
                 if self.config.wandb_log_texture:
-                    decoded_texture = (self.texture_mesh.texture / 2 + 0.5).clamp(0, 1)
-                    decoded_texture = torchvision.transforms.ToPILImage()(decoded_texture[0].permute(2, 0, 1)).convert("RGB")
+                    decoded_texture = self.texture_mesh.texture.permute(0, 3, 1, 2)
+                    if(self.config.aov == "roughness" or self.config.aov == "metallic"):  # on roughness and metallic only take first channel (rgbx convention)
+                            decoded_texture = decoded_texture[:, 0:1].repeat(1, 3, 1, 1)
+                    decoded_texture = (decoded_texture / 2 + 0.5).clamp(0, 1)
+                    decoded_texture = torchvision.transforms.ToPILImage()(decoded_texture[0]).convert("RGB")
                     decoded_texture = wandb.Image(decoded_texture)
                     wandb_log["texture"] = decoded_texture
 
                 wandb.log(wandb_log)
 
-        self.render_all_views()
 
-        self.save_texture()
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+        self.render_all_views(timestamp)
+
+        self.save_texture(timestamp)
 
         wandb.finish()
 
-    def render_all_views(self):
-        directory = "{}_results".format(self.aov)
+    def render_all_views(self, timestamp):
+        directory = os.path.join(self.config.log_dir, "kitchen_hq", timestamp, "{}_results".format(self.config.aov))
         if not os.path.exists(directory):
             os.makedirs(directory)
 
@@ -579,19 +585,24 @@ class TexturePipeline(nn.Module):
         
         for camera_id in range(cameras_count):
             Rs, Ts, fovs, _, image_path = self.studio.sample_cameras(camera_id, self.config.batch_size, random_cameras=False)            
-            cameras = self.studio.set_cameras(Rs, Ts, fovs)
+            cameras = self.studio.set_cameras(self.config.camera_type, Rs, Ts, fovs)
 
             _, features = self.forward(cameras, inference=True, downsample=False, is_direct=True)
+            if(self.config.aov == "roughness" or self.config.aov == "metallic"):  # on roughness and metallic only take first channel (rgbx convention)
+                features = features[:, 0:1].repeat(1, 3, 1, 1)
 
             image = torchvision.transforms.ToPILImage()(features.squeeze(0))
             path = os.path.join(directory, "{}.png".format(image_path.split("/")[-1]))
             image.save(path)
 
-    def save_texture(self):
-        directory = "{}_results".format(self.aov)
+    def save_texture(self, timestamp):
+        directory = os.path.join(self.config.log_dir, "kitchen_hq", timestamp, "{}_results".format(self.config.aov))
         if not os.path.exists(directory):
             os.makedirs(directory)
         
-        decoded_texture = (self.texture_mesh.texture / 2 + 0.5).clamp(0, 1)
-        decoded_texture = torchvision.transforms.ToPILImage()(decoded_texture[0].permute(2, 0, 1)).convert("RGB")
-        decoded_texture.save(os.path.join(directory, "{}_texture.png".format(self.aov)))
+        decoded_texture = self.texture_mesh.texture.permute(0, 3, 1, 2)
+        if(self.config.aov == "roughness" or self.config.aov == "metallic"):  # on roughness and metallic only take first channel (rgbx convention)
+                decoded_texture = decoded_texture[:, 0:1].repeat(1, 3, 1, 1)
+        decoded_texture = (decoded_texture / 2 + 0.5).clamp(0, 1)
+        decoded_texture = torchvision.transforms.ToPILImage()(decoded_texture[0]).convert("RGB")
+        decoded_texture.save(os.path.join(directory, "{}_texture.png".format(self.config.aov)))

@@ -15,7 +15,7 @@ lt.monkey_patch()
 
 import sys
 sys.path.append(".")
-from models.pipeline.parametric_texture_pipeline_frequency import TexturePipeline
+from models.pipeline.parametric_texture_pipeline import TexturePipeline
 from torchvision.utils import save_image
 
 # Setup
@@ -31,6 +31,8 @@ def init_config():
     parser.add_argument("--config", type=str, default="config/optimize_texture.yaml")
     args = parser.parse_args()
 
+    print("=> loading config file {}...".format(args.config))
+
     config = OmegaConf.load(args.config)
     return config
 
@@ -38,17 +40,13 @@ def init_config():
 def init_pipeline(
         config,
         stamp,
-        aov,
-        prompt,
         device=DEVICE,
         inference_mode=False
     ):
     pipeline = TexturePipeline(
         config=config,
         stamp=stamp,
-        device=device,
-        aov=aov,
-        prompt = prompt
+        device=device
     ).to(device)
 
     pipeline.configure()
@@ -65,10 +63,62 @@ if __name__ == "__main__":
 
     torch.backends.cudnn.benchmark = True
 
-    print("=> loading config file...")
     config = init_config()
 
-    def render_all_views():
+    #TODO (all):
+    # - metallic: init wit 0; roughness init with 1
+    # - log frequency weighting (parametric pipeline fit)
+    # - fix scannet: resize inputs (parametric_texture_pipeline fit, forward; guidance compute_image_space_sds_loss)
+    #       - change conditioning image resolution (768*x) (rgbx preprocess_image) must be dividible by 8 (682 wont work)
+    # - ray-based-update: remove random pixels from loss by random mask (guidance compute_image_space_sds_loss)
+
+    #TODO: ideas if time
+    # - oversmoothing fix: run one aov and one view diffusion with random noise, then run again with fixed noise. Compare results
+    #       - for multiple views: we have a noise texture, we render it from the views
+    #       - to get the latent dimension size (encoded size) instead of encoding we downsize the noise (because encoder cannot encode noise)
+
+    # results needed for thesis
+    # - teaser, fancy visualisation: albedo, roughness, metallic rendered in blender, add relighting
+    # - comparision on synthetic data (kitchen_hq) with other methods (qualitative and quantitative results like the one Peter sent) (all aov for at least 3-4 room (kitchen, bedroom, living room))
+    # - comparision on real data(scannet) with other methods (qualitative results)
+    # - ablations: intermediate results while developing the method (1-2 steps)
+    #       - latent space -> image space loss
+    #       - with / without guidance scale
+    #       - texture initialization
+    # generated data method will be application ("this method can also be used to first generate texture with baked in lights and then decomposition that texture into its parameters")
+
+    # TODO: inference_mode = hasattr(config, "checkpoint_dir") and len(config.checkpoint_dir) > 0
+
+    inference_mode = False
+    '''
+    prompts = {
+            "albedo": "Albedo (diffuse basecolor)",
+            "normal": "Camera-space Normal",
+            "roughness": "Roughness",
+            "metallic": "Metallicness",
+            "irradiance": "Irradiance (diffuse lighting)",
+        }
+    '''
+    prompts = {
+        "metallic": "Metallicness",
+        "roughness": "Roughness",
+    }  
+
+    stamp = "{}_{}".format(datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), "debug")
+
+    for aov in prompts.keys():
+        config.aov = aov
+        config.prompt = prompts[aov]
+        pipeline = init_pipeline(
+            config=config, 
+            stamp=stamp,
+            inference_mode=inference_mode
+        )
+        print("=> start training", aov, "...")
+        with torch.autograd.set_detect_anomaly(True):
+            pipeline.fit()
+
+    def debug_render_all_views():
         cameras_count = 10
         studio = Studio(config, DEVICE)
         texture_mesh = TextureMesh(config, DEVICE)
@@ -86,47 +136,11 @@ if __name__ == "__main__":
 
             save_image(relative_depth, "{}.png".format(image_path))
 
-    render_all_views()
+    def debug_render():
+        texture_mesh = TextureMesh(config, DEVICE)
 
-    #TODO (all):
-    # - metallic roughness channel fix (guidance compute_image_space_sds_loss)
-    # - fix scannet: resize inputs (parametric_texture_pipeline fit, forward; guidance compute_image_space_sds_loss)
-    #       - change conditioning image resolution (768*x) (rgbx preprocess_image) must be dividible by 8 (682 wont work)
-    # - ray-based-update: remove random pixels from loss by random mask (guidance compute_image_space_sds_loss)
-
-    # results needed for thesis
-    # - teaser, fancy visualisation: albedo, roughness, metallic rendered in blender, add relighting
-    # - comparision on synthetic data (kitchen_hq) with other methods (qualitative and quantitative results like the one Peter sent) (all aov for at least 3-4 room (kitchen, bedroom, living room))
-    # - comparision on real data(scannet) with other methods (qualitative results)
-    # - ablations: intermediate results while developing the method (1-2 steps)
-    #       - latent space -> image space loss
-    #       - with / without guidance scale
-    #       - texture initialization
-    # generated data method will be application ("this method can also be used to first generate texture with baked in lights and then decomposition that texture into its parameters")
-
-    # TODO: inference_mode = hasattr(config, "checkpoint_dir") and len(config.checkpoint_dir) > 0
-    
-    '''
-    inference_mode = False
-    prompts = {
-            "albedo": "Albedo (diffuse basecolor)",
-            "normal": "Camera-space Normal",
-            "roughness": "Roughness",
-            "metallic": "Metallicness",
-            "irradiance": "Irradiance (diffuse lighting)",
-        }
-
-    stamp = "{}_{}".format(datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), "debug")
-
-    for aov in prompts.keys():
-        pipeline = init_pipeline(
-            config=config, 
-            stamp=stamp,
-            aov=aov,
-            prompt=prompts[aov],
-            inference_mode=inference_mode
-        )
-        print("=> start training", aov, "...")
-        with torch.autograd.set_detect_anomaly(True):
-            pipeline.fit()
-    '''
+        decoded_texture_not_normalized = texture_mesh.texture[0].permute(2, 0, 1)
+        torchvision.transforms.ToPILImage()(decoded_texture_not_normalized).save("original_texture.png")
+        decoded_texture = (decoded_texture_not_normalized / 2 + 0.5).clamp(0, 1)
+        decoded_texture = torchvision.transforms.ToPILImage()(decoded_texture).convert("RGB")
+        decoded_texture.save("debug_texture.png")
