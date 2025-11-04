@@ -157,7 +157,7 @@ class TexturePipeline(nn.Module):
             wandb.login()
             wandb.init(
                 project="SceneTex",
-                name="kitchen_hq_new_init_{}_{}".format(self.config.aov, datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
+                name="kitchen_hq_origin_init_{}_{}".format(self.config.aov, datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
                 #dir=self.config.log_dir
             )
         else:

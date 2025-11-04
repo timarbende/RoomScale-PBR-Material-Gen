@@ -140,12 +140,27 @@ class TextureMesh(nn.Module):
 
         else:
             if self.config.texture_init == "origin":
-                texture = torch.zeros((
-                    1, 
-                    self.config.latent_texture_size, 
-                    self.config.latent_texture_size, 
-                    self.config.latent_channels
-                ), requires_grad=True, device=self.device)
+                if self.config.aov == "metallic":
+                    texture = torch.ones((
+                        1, 
+                        self.config.latent_texture_size, 
+                        self.config.latent_texture_size, 
+                        self.config.latent_channels
+                    ), requires_grad=True, device=self.device) * -1.0
+                elif self.config.aov == "roughness":
+                    texture = torch.ones((
+                        1, 
+                        self.config.latent_texture_size, 
+                        self.config.latent_texture_size, 
+                        self.config.latent_channels
+                    ), requires_grad=True, device=self.device)
+                else:
+                    texture = torch.zeros((
+                        1, 
+                        self.config.latent_texture_size, 
+                        self.config.latent_texture_size, 
+                        self.config.latent_channels
+                    ), requires_grad=True, device=self.device)
             
             else:
                 texture = torch.randn((
