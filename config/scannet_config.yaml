@@ -161,4 +161,5 @@ wandb_log_texture: True
 cache_dir: models/rgb2x_cache
 
 #conditioning image
-conditioning_image_format: png # png / exr (with exr tone-mapping may be off)
+conditioning_image_format: jpg # jpg / png / exr (with exr tone-mapping may be off)
+conditioning_images_path: ${scene_dir}/psdf

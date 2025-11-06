@@ -72,6 +72,7 @@ class Studio(nn.Module):
 
             self.Rs += Rs
             self.Ts += Ts
+            self.fovs += [None] * len(self.Rs)
             self.image_paths += image_paths
 
             print("=> using {} scannet cameras for training".format(len(Rs)))

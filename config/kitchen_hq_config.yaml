@@ -147,7 +147,7 @@ scene_mesh_path: ${scene_dir}/scene.obj
 frequency_texture_path: ${scene_dir}/train/frequency/frequency_texture.png
 
 # wandb
-use_wandb: True
+use_wandb: False
 wandb_log_steps: 100
 wandb_log_hyperparameters: True
 wandb_log_conditioning_image: True
@@ -162,3 +162,4 @@ cache_dir: models/rgb2x_cache
 
 #conditioning image
 conditioning_image_format: png # png / exr (with exr tone-mapping may be off)
+conditioning_images_path: ${scene_dir}

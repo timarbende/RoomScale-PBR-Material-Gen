@@ -157,7 +157,8 @@ class TexturePipeline(nn.Module):
             wandb.login()
             wandb.init(
                 project="SceneTex",
-                name="scannet_{}_{}".format(self.config.aov, datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
+                name="kitchen_hq_origin_init_{}_{}".format(self.config.aov, datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
+                #dir=self.config.log_dir
             )
         else:
             print("Not using WandB (set use_wandb to True in template.yaml to enable it)")
@@ -304,9 +305,7 @@ class TexturePipeline(nn.Module):
         return mesh, texture, background_mesh, background_texture
 
     def forward(self, camera, inference=False, downsample=True, is_direct=False):
-        #TODO: set render size in config?
-        #renderer = self.studio.set_renderer(camera, self.config.render_size)
-        renderer = self.studio.set_renderer(camera, (512, 768))
+        renderer = self.studio.set_renderer(camera, self.config.render_size)
 
         mesh, texture, background_mesh, background_texture = self._prepare_mesh(inference)
 
@@ -314,6 +313,8 @@ class TexturePipeline(nn.Module):
  
         latents, _ = self.studio.render(renderer, mesh, texture, background_mesh, background_texture, anchors, is_direct)
         latents = latents.permute(0, 3, 1, 2)
+        
+        #TODO: downsize latents to also 768 * 512
 
         not_encoded_latents = latents
         not_encoded_latents = (not_encoded_latents / 2 + 0.5).clamp(0, 1)
@@ -394,29 +395,29 @@ class TexturePipeline(nn.Module):
             conditioning_image = None
             if(image_path is not None):
                 if(self.config.conditioning_image_format == "exr"):
-                    full_path = os.path.join(self.config.conditioning_images_path, image_path + ".exr")
+                    full_path = os.path.join(self.config.scene_dir, image_path + ".exr")
                     conditioning_image = cv2.imread(full_path, cv2.IMREAD_UNCHANGED)
                     conditioning_image = cv2.cvtColor(conditioning_image, cv2.COLOR_BGR2RGB)
                     conditioning_image = conditioning_image.astype(np.float32)
                     conditioning_image = torch.from_numpy(conditioning_image).permute(2, 0, 1).unsqueeze(0).to(self.device)
 
-                else:
-                    full_path = os.path.join(self.config.conditioning_images_path, image_path)
+                if(self.config.conditioning_image_format == "png"):
+                    full_path = os.path.join(self.config.scene_dir, image_path + ".png")
                     conditioning_image = torchvision.io.read_image(full_path, mode=torchvision.io.ImageReadMode.RGB)
                     conditioning_image = conditioning_image / 255
-                    conditioning_image = conditioning_image.unsqueeze(0).to(self.device) # (B, C, H, W)
+                    conditioning_image = conditioning_image.unsqueeze(0).to(self.device)
 
 
             if(conditioning_image != None):
                 conditioning_image_log = conditioning_image
                 conditioning_image = self.normalize_image(conditioning_image)
-
-                # resize conditioning image (later on we can do some logic instead of hardcoding)
-                conditioning_image = torchvision.transforms.Resize((512, 768))(conditioning_image)
             
                 # scaling is also done in encode_latent_texture
                 conditioning_image = self.guidance.encode_latent_texture(conditioning_image)
                 conditioning_image = self.prepare_conditioning_image_input(conditioning_image)
+
+                # downsize conditioning_image to 768*height (height also needs to be divisible by 8)
+                # actually it's 768 * 512
 
             # compute loss
             self.texture_optimizer.zero_grad()
