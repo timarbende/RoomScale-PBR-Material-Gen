@@ -103,7 +103,7 @@ class TexturePipeline(nn.Module):
         self._init_studio()
 
         # instances
-        self._init_anchors()
+        #self._init_anchors()
 
         self._init_guidance()
 
@@ -149,8 +149,6 @@ class TexturePipeline(nn.Module):
             self.studio.init_anchor_func(self.texture_mesh.num_instances)
 
     def _init_logger(self):
-        #os.makedirs(self.config.log_dir, exist_ok=True)
-
         model_type = "controlnet" if "controlnet" in self.config.diffusion_type else "SD"
 
         if(self.config.use_wandb):
@@ -176,6 +174,7 @@ class TexturePipeline(nn.Module):
                 "config/latent_texture_size": self.config.latent_texture_size,
                 "config/loss_type": self.config.loss_type,
                 "config/diffusion_type": self.config.diffusion_type,
+                "config/dropout_rate": self.config.loss_keep_prob
             })
 
         self.avg_loss_sds = []
@@ -576,7 +575,7 @@ class TexturePipeline(nn.Module):
         wandb.finish()
 
     def render_all_views(self, timestamp):
-        directory = os.path.join(self.config.log_dir, "kitchen_hq", timestamp, "{}_results".format(self.config.aov))
+        directory = os.path.join(self.config.log_dir, timestamp, "{}_results".format(self.config.aov))
         if not os.path.exists(directory):
             os.makedirs(directory)
 
@@ -595,7 +594,7 @@ class TexturePipeline(nn.Module):
             image.save(path)
 
     def save_texture(self, timestamp):
-        directory = os.path.join(self.config.log_dir, "kitchen_hq", timestamp, "{}_results".format(self.config.aov))
+        directory = os.path.join(self.config.log_dir, timestamp, "{}_results".format(self.config.aov))
         if not os.path.exists(directory):
             os.makedirs(directory)
         

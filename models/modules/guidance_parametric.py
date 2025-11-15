@@ -320,7 +320,9 @@ class Guidance(nn.Module):
 
         loss = F.mse_loss(not_encoded_latents, x0, reduction="none")
 
-        #TODO: 0 pixels by random mask
+        if "loss_keep_prob" in self.config and self.config.loss_keep_prob is not None:
+            mask = (torch.rand_like(loss) < self.config.loss_keep_prob).float()
+            loss = loss * mask
 
         return loss, x0
     

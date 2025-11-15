@@ -41,6 +41,7 @@ show_rgb_gt: False
 phi_type: lora # lora / simple_unet
 loss_type: sds # vsd / sds / l2
 loss_space: image # image / latent
+loss_keep_prob: 0.7
 diffusion_type: d2i # t2i / d2i / d2i_controlnet
 generation_mode: vsd # t2i / vsd 
 t_schedule: random  # random / t_stages2 / anneal -> need to set num_anneal_steps
@@ -130,7 +131,7 @@ dummy_texture_path: samples/textures/dummy.png
 label_path: samples/scene/label.png
 background: samples/primitives/cube.obj
 
-log_dir: "outputs"
+log_dir: "outputs/scannet"
 
 prompt: "a bohemian style living room"
 a_prompt: best quality, high quality, extremely detailed, good geometry, high-res photo

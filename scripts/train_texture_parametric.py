@@ -114,9 +114,6 @@ if __name__ == "__main__":
     config = init_config()
 
     #TODO (all):
-    # - fix scannet: resize inputs (parametric_texture_pipeline fit, forward; guidance compute_image_space_sds_loss)
-    #       - change conditioning image resolution (768*x) (rgbx preprocess_image) must be dividible by 8 (682 wont work)
-    # - ray-based-update: remove random pixels from loss by random mask (guidance compute_image_space_sds_loss)
     # - log frequency weighting (parametric pipeline fit)
 
     #TODO: ideas if time
