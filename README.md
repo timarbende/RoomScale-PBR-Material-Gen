@@ -4,3 +4,5 @@ Recent developments in Score Distillation Sampling led to pipelines generating h
 
 All experiments were launched on a workstation equipped with a single NVIDIA GeForce RTX 3090 GPU with 24GB VRAM available, running CUDA Version 12.9. A floating-point
 precision of 32-bits was used, as 16-bit precision results in gradient explosion and oversaturated model outputs. Average runtime of generating a single material map was found to be 4.5 hours with 17K training iterations.
+
+Setup and run instructions are to be added soon
