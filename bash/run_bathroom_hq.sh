@@ -1,0 +1,1 @@
+python scripts/train_texture_parametric.py --config config/bathroom_hq_config.yaml

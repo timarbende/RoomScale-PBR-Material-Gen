@@ -41,8 +41,8 @@ show_rgb_gt: False
 
 phi_type: lora # lora / simple_unet
 loss_type: sds # vsd / sds / l2
-loss_space: latent # image / latent
-loss_keep_prob: 0.6
+loss_space: image # image / latent
+loss_keep_prob: 0.7
 diffusion_type: d2i # t2i / d2i / d2i_controlnet
 generation_mode: vsd # t2i / vsd 
 t_schedule: random  # random / t_stages2 / anneal -> need to set num_anneal_steps
@@ -52,7 +52,7 @@ downsample: vae # interpolate / vae -> refer to texture type below
 latent_size: 64 # DO NOT CHANGE unless you know what you're doing!!!      # used only when downsample="interpolate" 
 latent_channels: 3 # DO NOT CHANGE unless you know what you're doing!!!
 render_channels: 3 # DO NOT CHANGE unless you know what you're doing!!!
-render_size: 512 # DO NOT CHANGE unless you know what you're doing!!!     # used to set rendered image size
+render_size: (512, 768) # DO NOT CHANGE unless you know what you're doing!!!     # used to set rendered image size
 decode_size: 512 # DO NOT CHANGE unless you know what you're doing!!!     # used only for logging
 latent_texture_size: 4096 # optimization target size                      
 latent_background_size: 4096 # optimization target size
@@ -79,8 +79,8 @@ batch_size: 1
 verbose_mode: False
 
 # cameras
-camera_type: kitchen_hq # scannet / kitchen_hq / sphere / blenderproc / blender
-use_random_cameras: False # False -> sample cameras in order, True -> sample cameras randomly
+camera_type: scannet # scannet / kitchen_hq / sphere / blenderproc / blender
+use_random_cameras: True # False -> sample cameras in order, True -> sample cameras randomly
 
 # camera direction
 use_latent_embeddings: False
@@ -132,30 +132,30 @@ dummy_texture_path: samples/textures/dummy.png
 label_path: samples/scene/label.png
 background: samples/primitives/cube.obj
 
-log_dir: "outputs/kitchen_hq"
+log_dir: "outputs/scannet_bedroom"
 
 prompt: "a bohemian style living room"
 a_prompt: best quality, high quality, extremely detailed, good geometry, high-res photo
 n_prompt: "" #TODO can we have n_prompt for albedo? #deformed, extra digit, fewer digits, cropped, worst quality, low quality, smoke, shading, lighting, lumination, shadow, text in image, watermarks
 
-scene_dir: data/kitchen_hq
+scene_dir: data/scannet_bedroom
 scene_id: "93f59740-4b65-4e8b-8a0f-6420b339469d/room_4"
 scene_config_path: ${scene_dir}/${scene_id}/meshes/scene_config.json
 sphere_cameras: ${scene_dir}/cameras/sphere.yaml
 blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
 blender_cameras: ${scene_dir}/cameras/blender.json
-custom_cameras: ${scene_dir}/cameras/blender.json
-scene_mesh_path: ${scene_dir}/scene.obj
-frequency_texture_path: ${scene_dir}/train/frequency/frequency_texture.png
+custom_cameras: ${scene_dir}/psdf/transforms_all.json
+scene_mesh_path: ${scene_dir}/psdf/mesh/textured/mesh.obj
+#frequency_texture_path: ${scene_dir}/train/frequency/frequency_texture.png TODO: add frequency texture generation into pipeline
 
 # wandb
 use_wandb: True
-wandb_run_name: kitchen_latent_loss
+wandb_run_name: scannet_bedroom
 wandb_log_steps: 100
 wandb_log_hyperparameters: True
-wandb_log_conditioning_image: False
-wandb_log_denoised_latents: False
-wandb_log_pred_original_sample: False
+wandb_log_conditioning_image: True
+wandb_log_denoised_latents: True
+wandb_log_pred_original_sample: True
 wandb_log_noisy_latents: False
 wandb_log_not_encoded_latents: False
 wandb_log_texture: True
@@ -164,5 +164,5 @@ wandb_log_texture: True
 cache_dir: models/rgb2x_cache
 
 #conditioning image
-conditioning_image_format: png # png / exr (with exr tone-mapping may be off)
-conditioning_images_path: ${scene_dir}
+conditioning_image_format: jpg # jpg / png / exr (with exr tone-mapping may be off)
+conditioning_images_path: ${scene_dir}/psdf

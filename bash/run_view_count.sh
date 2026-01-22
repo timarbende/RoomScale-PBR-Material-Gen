@@ -1,0 +1,1 @@
+python scripts/train_view_count_texture.py --config config/generated_config.yaml

@@ -25,3 +25,5 @@ models/rgb2x_cache/
 lib/__pycache__/
 
 wandb/
+
+comparisons/

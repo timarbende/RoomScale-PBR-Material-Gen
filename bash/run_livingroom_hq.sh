@@ -1,0 +1,1 @@
+python scripts/train_texture_parametric.py --config config/livingroom_hq_config.yaml

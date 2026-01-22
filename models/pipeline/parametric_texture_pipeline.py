@@ -71,6 +71,8 @@ from PIL import Image
 
 from datetime import datetime
 
+from tools.tuple_reader import get_render_size
+
 class TexturePipeline(nn.Module):
     def __init__(self, 
         config,
@@ -139,6 +141,16 @@ class TexturePipeline(nn.Module):
                 sampling_mode="bilinear"
             )
 
+        if(self.config.use_noise_mesh):
+            mesh = self.texture_mesh.mesh
+            self.noise_mesh = mesh.clone()
+            self.noise_mesh.textures = TexturesUV(
+                maps=torch.rand_like(mesh.textures.maps_padded()),
+                faces_uvs= mesh.textures.faces_uvs_padded(),
+                verts_uvs= mesh.textures.verts_uvs_padded(),
+                sampling_mode="bilinear"
+            )
+
     def _init_guidance(self):
         self.guidance = Guidance(self.config, self.device)
 
@@ -155,7 +167,7 @@ class TexturePipeline(nn.Module):
             wandb.login()
             wandb.init(
                 project="SceneTex",
-                name="scannet_{}_{}".format(self.config.aov, datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
+                name="{}_{}_{}".format(self.config.wandb_run_name, self.config.aov, datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
             )
         else:
             print("Not using WandB (set use_wandb to True in template.yaml to enable it)")
@@ -170,7 +182,7 @@ class TexturePipeline(nn.Module):
                 "config/guidance_scale": self.config.guidance_scale,
                 "config/image_guidance_scale": self.config.image_guidance_scale,
                 "config/learning_rate": self.config.latent_lr,
-                "config/render_size": self.config.render_size,
+                "config/render_size": get_render_size(self.config.render_size),
                 "config/latent_texture_size": self.config.latent_texture_size,
                 "config/loss_type": self.config.loss_type,
                 "config/diffusion_type": self.config.diffusion_type,
@@ -303,9 +315,7 @@ class TexturePipeline(nn.Module):
         return mesh, texture, background_mesh, background_texture
 
     def forward(self, camera, inference=False, downsample=True, is_direct=False):
-        #TODO: set render size in config?
-        #renderer = self.studio.set_renderer(camera, self.config.render_size)
-        renderer = self.studio.set_renderer(camera, (512, 768))
+        renderer = self.studio.set_renderer(camera, get_render_size(self.config.render_size))
 
         mesh, texture, background_mesh, background_texture = self._prepare_mesh(inference)
 
@@ -343,7 +353,7 @@ class TexturePipeline(nn.Module):
             return 0
 
     def render_conditioning_image(self, cameras):
-        renderer = self.studio.set_renderer(cameras, self.config.render_size)
+        renderer = self.studio.set_renderer(cameras, get_render_size(self.config.render_size))
 
         images, fragments = renderer(self.conditioning_mesh)
         return images
@@ -362,9 +372,15 @@ class TexturePipeline(nn.Module):
         return image_latents
     
     def render_frequency_view(self, cameras):
-        renderer = self.studio.set_renderer(cameras, self.config.render_size)
+        renderer = self.studio.set_renderer(cameras, get_render_size(self.config.render_size))
 
         images, _ = renderer(self.frequency_mesh)
+        return images
+    
+    def render_noise(self, cameras):
+        renderer = self.studio.set_renderer(cameras, get_render_size(self.config.render_size))
+
+        images, _ = renderer(self.noise_mesh)
         return images
 
     def fit(self):
@@ -388,6 +404,9 @@ class TexturePipeline(nn.Module):
                     torchvision.transforms.ToPILImage()(not_encoded_latents[0]).convert("RGB")
                 )
 
+            #TODO
+            #noise = self.render_noise(cameras)
+
             t, noise, noisy_latents = self.guidance.add_noise_to_latents(latents, chosen_t, self.config.batch_size)
 
             conditioning_image = None
@@ -400,7 +419,11 @@ class TexturePipeline(nn.Module):
                     conditioning_image = torch.from_numpy(conditioning_image).permute(2, 0, 1).unsqueeze(0).to(self.device)
 
                 else:
-                    full_path = os.path.join(self.config.conditioning_images_path, image_path)
+                    if(self.config.camera_type == "kitchen_hq"):
+                        file_name = "{}.png".format(image_path)
+                    else:
+                        file_name = image_path
+                    full_path = os.path.join(self.config.conditioning_images_path, file_name)
                     conditioning_image = torchvision.io.read_image(full_path, mode=torchvision.io.ImageReadMode.RGB)
                     conditioning_image = conditioning_image / 255
                     conditioning_image = conditioning_image.unsqueeze(0).to(self.device) # (B, C, H, W)
@@ -410,8 +433,7 @@ class TexturePipeline(nn.Module):
                 conditioning_image_log = conditioning_image
                 conditioning_image = self.normalize_image(conditioning_image)
 
-                # resize conditioning image (later on we can do some logic instead of hardcoding)
-                conditioning_image = torchvision.transforms.Resize((512, 768))(conditioning_image)
+                conditioning_image = torchvision.transforms.Resize(get_render_size(self.config.render_size))(conditioning_image)
             
                 # scaling is also done in encode_latent_texture
                 conditioning_image = self.guidance.encode_latent_texture(conditioning_image)
@@ -604,3 +626,17 @@ class TexturePipeline(nn.Module):
         decoded_texture = (decoded_texture / 2 + 0.5).clamp(0, 1)
         decoded_texture = torchvision.transforms.ToPILImage()(decoded_texture[0]).convert("RGB")
         decoded_texture.save(os.path.join(directory, "{}_texture.png".format(self.config.aov)))
+
+    def debug_render_noise(self):
+        Rs, Ts, fovs, _, image_path = self.studio.sample_cameras(0, self.config.batch_size, random_cameras=False)            
+        cameras = self.studio.set_cameras(self.config.camera_type, Rs, Ts, fovs)
+
+        renderer = self.studio.set_renderer(cameras, (512, 768))
+
+        latents, _ = renderer(self.noise_mesh)
+        latents = latents.permute(0, 3, 1, 2)
+        latents = (latents / 2 + 0.5).clamp(0, 1)
+
+        image = torchvision.transforms.ToPILImage()(latents.squeeze(0))
+        path = os.path.join("noise_mesh.png")
+        image.save(path)

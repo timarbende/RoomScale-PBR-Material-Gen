@@ -136,10 +136,12 @@ class Studio(nn.Module):
 
             Rs, Ts = init_trajectory(dist_list, elev_list, azim_list, at)
             fovs = combinations[:, 3].tolist()
+            image_paths = ['' for _ in fovs]
 
             self.Rs += Rs
             self.Ts += Ts
             self.fovs += fovs
+            self.image_paths += image_paths
 
             print("=> using {} spherical cameras for training".format(len(Rs)))
 

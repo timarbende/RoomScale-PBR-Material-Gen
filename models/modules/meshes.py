@@ -21,6 +21,8 @@ from lib.build_instance_map import build_instance_map
 sys.path.append("./models")
 from models.modules.modules import MLP, Siren, HashGrid, HashGridMLP
 
+from tools.tuple_reader import get_render_size
+
 """
     Textured Mesh model - Defining the texture and background for optimization
 """
@@ -193,7 +195,7 @@ class TextureMesh(nn.Module):
         instance_map = build_instance_map(studio, 
             cache_dir, cache_dir,
             self.config.dummy_texture_path, 
-            self.device, self.config.texture_size, self.config.render_size, 500).to(self.device)
+            self.device, self.config.texture_size, get_render_size(self.config.render_size), 500).to(self.device)
 
         assert len(instance_map.shape) == 2, "instance map should be in shape (W, H)"
 

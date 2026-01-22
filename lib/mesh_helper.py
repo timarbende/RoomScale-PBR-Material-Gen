@@ -31,6 +31,8 @@ sys.path.append(".")
 
 from lib.colors import PALETTE
 
+import trimesh
+
 
 def compute_principle_directions(model_path, num_points=20000):
     mesh = trimesh.load_mesh(model_path, force="mesh")

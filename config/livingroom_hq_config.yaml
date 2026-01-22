@@ -4,7 +4,7 @@ guidance_scale_phi: 1.0
 image_guidance_scale: 1.0
 phi_scale: 1.0
 grad_scale: 1.0
-latent_lr: 1e-3
+latent_lr: 1e-2
 latent_wd: 0
 phi_lr: 1e-4
 latent_encoder_lr: 3e-2
@@ -41,8 +41,8 @@ show_rgb_gt: False
 
 phi_type: lora # lora / simple_unet
 loss_type: sds # vsd / sds / l2
-loss_space: latent # image / latent
-loss_keep_prob: 0.6
+loss_space: image # image / latent
+loss_keep_prob: 0.7
 diffusion_type: d2i # t2i / d2i / d2i_controlnet
 generation_mode: vsd # t2i / vsd 
 t_schedule: random  # random / t_stages2 / anneal -> need to set num_anneal_steps
@@ -132,29 +132,29 @@ dummy_texture_path: samples/textures/dummy.png
 label_path: samples/scene/label.png
 background: samples/primitives/cube.obj
 
-log_dir: "outputs/kitchen_hq"
+log_dir: "outputs/livingroom_hq"
 
 prompt: "a bohemian style living room"
 a_prompt: best quality, high quality, extremely detailed, good geometry, high-res photo
 n_prompt: "" #TODO can we have n_prompt for albedo? #deformed, extra digit, fewer digits, cropped, worst quality, low quality, smoke, shading, lighting, lumination, shadow, text in image, watermarks
 
-scene_dir: data/kitchen_hq
+scene_dir: data/livingroom_hq
 scene_id: "93f59740-4b65-4e8b-8a0f-6420b339469d/room_4"
 scene_config_path: ${scene_dir}/${scene_id}/meshes/scene_config.json
 sphere_cameras: ${scene_dir}/cameras/sphere.yaml
 blenderproc_cameras: ${scene_dir}/${scene_id}/cameras/blenderproc.json
 blender_cameras: ${scene_dir}/cameras/blender.json
-custom_cameras: ${scene_dir}/cameras/blender.json
+custom_cameras: ${scene_dir}/train/transforms.json
 scene_mesh_path: ${scene_dir}/scene.obj
 frequency_texture_path: ${scene_dir}/train/frequency/frequency_texture.png
 
 # wandb
 use_wandb: True
-wandb_run_name: kitchen_latent_loss
+wandb_run_name: livingroom
 wandb_log_steps: 100
 wandb_log_hyperparameters: True
-wandb_log_conditioning_image: False
-wandb_log_denoised_latents: False
+wandb_log_conditioning_image: True
+wandb_log_denoised_latents: True
 wandb_log_pred_original_sample: False
 wandb_log_noisy_latents: False
 wandb_log_not_encoded_latents: False

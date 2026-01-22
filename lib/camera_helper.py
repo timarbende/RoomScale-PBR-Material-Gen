@@ -415,7 +415,7 @@ def init_kitchen_hq_trajectory(trajectory, device):
 
     return Rs, Ts, image_paths
 
-# read in camera transforms for kitchen_hq dataset
+# read in camera transforms for scannet dataset
 def init_scannet_trajectory(trajectory):
 
     Rs, Ts, image_paths = [], [], []
