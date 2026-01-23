@@ -12,8 +12,14 @@ models/threestudio-github/
 models/tiny-cuda-nn/
 models/3D-FRONT-ToolBox/
 
-data/3D-FRONT_preprocessed/
-data/
+data/*
+!data/3DFront_scenes.zip
+!data/bathroom_hq.zip
+!data/bedroom_hq.zip
+!data/kitchen_hq.zip
+!data/livingroom_hq.zip
+!data/scannet_apartment.zip
+!data/scannet_bedroom.zip
 
 _cache*
 *.pyc

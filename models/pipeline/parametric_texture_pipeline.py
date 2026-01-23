@@ -170,7 +170,7 @@ class TexturePipeline(nn.Module):
                 name="{}_{}_{}".format(self.config.wandb_run_name, self.config.aov, datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
             )
         else:
-            print("Not using WandB (set use_wandb to True in template.yaml to enable it)")
+            print("Not using WandB (set use_wandb to True in the used config file to enable it)")
 
         '''
         with open(os.path.join(self.log_dir, "config.yaml"), "w") as f:
