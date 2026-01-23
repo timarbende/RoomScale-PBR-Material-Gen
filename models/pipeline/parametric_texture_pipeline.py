@@ -166,7 +166,7 @@ class TexturePipeline(nn.Module):
         if(self.config.use_wandb):
             wandb.login()
             wandb.init(
-                project="SceneTex",
+                project="MatGen",
                 name="{}_{}_{}".format(self.config.wandb_run_name, self.config.aov, datetime.now().strftime("%Y-%m-%d_%H-%M-%S")),
             )
         else:

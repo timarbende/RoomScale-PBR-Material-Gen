@@ -62,43 +62,14 @@ if __name__ == "__main__":
 
     config = init_config()
 
-    """
-    aovs = ["albedo", "roughness", "metallic"]
-    for aov in aovs:
-        config.aov = aov
-        debug_render(config, aov)
-    """
-    debug_render_latent(config)
-
-    #TODO (all):
-    # - log frequency weighting (parametric pipeline fit)
-
-    #TODO: ideas if time
-    # - oversmoothing fix: run one aov and one view diffusion with random noise, then run again with fixed noise. Compare results
-    #       - for multiple views: we have a noise texture, we render it from the views
-    #       - to get the latent dimension size (encoded size) instead of encoding we downsize the noise (because encoder cannot encode noise)
-
-    # results needed for thesis
-    # - teaser, fancy visualisation: albedo, roughness, metallic rendered in blender, add relighting
-    # - comparision on synthetic data (kitchen_hq) with other methods (qualitative and quantitative results like the one Peter sent) (all aov for at least 3-4 room (kitchen, bedroom, living room))
-    # - comparision on real data(scannet) with other methods (qualitative results)
-    # - ablations: intermediate results while developing the method (1-2 steps)
-    #       - latent space -> image space loss
-    #       - with / without guidance scale
-    #       - texture initialization
-    # generated data method will be application ("this method can also be used to first generate texture with baked in lights and then decomposition that texture into its parameters")
-
-    # TODO: inference_mode = hasattr(config, "checkpoint_dir") and len(config.checkpoint_dir) > 0
-
     inference_mode = False
 
-    """
     prompts = {
             "albedo": "Albedo (diffuse basecolor)",
-            #"normal": "Camera-space Normal",
-            #"roughness": "Roughness",
-            #"metallic": "Metallicness",
-            #"irradiance": "Irradiance (diffuse lighting)",
+            "normal": "Camera-space Normal",
+            "roughness": "Roughness",
+            "metallic": "Metallicness",
+            "irradiance": "Irradiance (diffuse lighting)",
         } 
 
     stamp = "{}_{}".format(datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), "debug")
@@ -114,5 +85,3 @@ if __name__ == "__main__":
         print("=> start training", aov, "...")
         with torch.autograd.set_detect_anomaly(True):
             pipeline.fit()
-
-    """
